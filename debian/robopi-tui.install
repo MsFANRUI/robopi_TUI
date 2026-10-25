@@ -1,0 +1,8 @@
+TUI/robopi-tui usr/sbin
+TUI/plugin_test_menu.py usr/lib/robopi-tui
+loader/*.py usr/lib/robopi-tui/loader
+loader/examples/*.py usr/share/doc/robopi-tui/loader/examples
+plugins/*.py usr/lib/robopi-tui/plugins
+plugins/README.md usr/share/doc/robopi-tui/plugins
+plugins/STATUS.md usr/share/doc/robopi-tui/plugins
+

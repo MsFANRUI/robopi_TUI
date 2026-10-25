@@ -1,0 +1,60 @@
+name: Build RoboPi TUI Deb Package
+
+on:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Tag vs changelog version check
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+        DEBIAN_VERSION=$(dpkg-parsechangelog -S Version)
+        CHANGELOG_VERSION=${DEBIAN_VERSION%%-*}
+
+        echo "Tag version:       $TAG_VERSION"
+        echo "Changelog version: $CHANGELOG_VERSION"
+
+        if [ "$TAG_VERSION" != "$CHANGELOG_VERSION" ]; then
+          echo "::error::Version mismatch! tag=v$TAG_VERSION, changelog=$CHANGELOG_VERSION"
+          exit 1
+        fi
+
+        echo "Tag matches changelog: v$TAG_VERSION"
+
+    - name: Install build dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential debhelper
+
+    - name: Build Debian package
+      run: |
+        dpkg-buildpackage -us -uc -b
+
+        DEBIAN_VERSION=$(dpkg-parsechangelog -S Version)
+        VERSION=${DEBIAN_VERSION%%-*}
+        mv "../robopi-tui_${DEBIAN_VERSION}_arm64.deb" .
+
+        echo "PKG_VERSION=$VERSION" >> $GITHUB_ENV
+        ls -l robopi-tui_*_arm64.deb
+
+    - name: Upload Debian package
+      uses: actions/upload-artifact@v4
+      with:
+        name: robopi-tui-v${{ env.PKG_VERSION }}-arm64
+        path: |
+          robopi-tui_*_arm64.deb
+
+    - name: Upload to GitHub Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          robopi-tui_*_arm64.deb

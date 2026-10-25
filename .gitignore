@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+debian/.debhelper/
+debian/*.debhelper
+debian/*.debhelper.log
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/robopi-tui/
+debian/robopi-tui-dbgsym/
+debian/tmp/
+*.build
+*.buildinfo
+*.changes
+*.ddeb
+*.deb

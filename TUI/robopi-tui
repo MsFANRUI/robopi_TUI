@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0
+# Copyright (C) 2026 wentywenty
+
+"""Generic terminal frontend for package-owned board plugins."""
+
+import argparse
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parent
+STAGED = ROOT.parent / 'lib' / 'robopi-tui'
+MODULE_DIR = (ROOT if (ROOT / 'plugin_test_menu.py').is_file() else
+              STAGED if (STAGED / 'plugin_test_menu.py').is_file() else
+              Path('/usr/lib/robopi-tui'))
+sys.path.insert(0, str(MODULE_DIR))
+sys.path.insert(0, str(MODULE_DIR if (MODULE_DIR / 'loader').is_dir() else ROOT.parent))
+from plugin_test_menu import load_catalog, plugin_tests_menu
+from loader.plugin_metadata import manage_plugins
+from loader.package_version import package_version
+
+
+PACKAGE_VERSION = package_version()
+APP_TITLE = f'RoboPi TUI {PACKAGE_VERSION}'
+
+
+class UI:
+    def dialog(self, *args, capture=False):
+        argv = ['dialog', '--clear', '--backtitle', APP_TITLE, *args]
+        if capture:
+            result = subprocess.run([argv[0], '--stdout', *argv[1:]], text=True,
+                                    stdout=subprocess.PIPE, check=False)
+            return result.stdout.strip() if result.returncode == 0 else None
+        return subprocess.run(argv, check=False).returncode == 0
+
+    def menu(self, title, items, prompt='Select an action'):
+        argv = [entry for item in items for entry in item]
+        return self.dialog('--title', title, '--menu', prompt, '20', '84', '12',
+                           *argv, capture=True)
+
+    def input(self, title, prompt, initial=''):
+        return self.dialog('--title', title, '--inputbox', prompt, '11', '76',
+                           initial, capture=True)
+
+    def yes(self, title, prompt):
+        return self.dialog('--title', title, '--yesno', prompt, '12', '76')
+
+    def message(self, title, body):
+        self.dialog('--title', title, '--msgbox', body, '17', '80')
+
+    def output(self, title, body):
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8') as tmp:
+            tmp.write(body + '\n')
+            tmp.flush()
+            self.dialog('--title', title, '--textbox', tmp.name, '23', '90')
+
+    def edit(self, title, content):
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8') as tmp:
+            tmp.write(content + '\n')
+            tmp.flush()
+            return self.dialog('--title', title, '--editbox', tmp.name, '23', '90',
+                               capture=True)
+
+
+def main_menu(ui):
+    develop = False
+    while True:
+        try:
+            tests = load_catalog(develop=develop)
+        except ValueError as exc:
+            ui.message('Plugins', str(exc))
+            return
+        if not develop:
+            tests = [test for test in tests if test['lifecycle'] == 'official']
+        categories = list(dict.fromkeys(test.get('category', '板端测试') for test in tests))
+        choice = ui.menu(APP_TITLE, [('mode', f"Developer mode: {'on' if develop else 'off'}"),
+                                        *([('all', 'All plugins')] if develop else []),
+                                        *[(str(index), category)
+                                          for index, category in enumerate(categories)],
+                                        ('manager', 'Plugin metadata')],
+                         'Select a board function')
+        if choice is None:
+            return
+        if choice == 'mode':
+            develop = not develop
+            continue
+        if choice == 'manager':
+            manage_plugins(ui)
+            continue
+        plugin_tests_menu(ui, category=None if choice == 'all'
+                          else categories[int(choice)], develop=develop)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--list-features', action='store_true',
+                        help='print installed plugin names grouped by category')
+    parser.add_argument('--version', action='version', version=APP_TITLE)
+    args = parser.parse_args()
+    if args.list_features:
+        try:
+            features = {}
+            for test in load_catalog(save=False, develop=True):
+                features.setdefault(test.get('category', '板端测试'), []).append(test['name'])
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(json.dumps(features, ensure_ascii=False, indent=2))
+        return 0
+    if not sys.stdin.isatty() or not sys.stderr.isatty():
+        parser.error('interactive use requires a terminal')
+    if not shutil.which('dialog'):
+        parser.error('dialog is required')
+    main_menu(UI())
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -1,0 +1,18 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: robopi-tui
+Source: https://github.com/Roboparty/robopi_TUI
+
+Files: *
+Copyright: 2026 wentywenty <2321901849@qq.com>
+           2026 RoboParty contributors
+License: GPL-3.0
+
+Files: plugins/019-addon_sig_outputs.py plugins/014-usb_hub_reset_stress.py
+Copyright: 2026 fanxiaobinggit <16692712013@163.com>
+           2026 YutongChenVictor <yutongchenvictor@foxmail.com>
+License: GPL-3.0
+
+License: GPL-3.0
+ On Debian systems, the full text of the GNU General Public License version 3
+ can be found in /usr/share/common-licenses/GPL-3.
+
