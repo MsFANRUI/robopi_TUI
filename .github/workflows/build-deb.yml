@@ -45,6 +45,24 @@ jobs:
         echo "PKG_VERSION=$VERSION" >> $GITHUB_ENV
         ls -l robopi-tui_*_arm64.deb
 
+    - name: Verify package layout
+      run: |
+        set -eu
+        deb=$(find . -maxdepth 1 -name 'robopi-tui_*_arm64.deb' -print -quit)
+        test -n "$deb"
+        test ! -e package-root
+        mkdir package-root
+        dpkg-deb -x "$deb" package-root
+        test -x package-root/opt/roboparty/bin/robopi-tui
+        test -L package-root/usr/bin/robopi-tui
+        test -f package-root/opt/roboparty/lib/robopi-tui/loader/plugin_executor.py
+        test -f package-root/opt/roboparty/lib/robopi-tui/plugins/001-board_temperature.py
+        test -f package-root/opt/roboparty/share/doc/robopi-tui/changelog
+        test -f package-root/opt/roboparty/share/doc/robopi-tui/plugins/README.md
+        test ! -e package-root/usr/sbin/robopi-tui
+        test ! -d package-root/usr/lib/robopi-tui
+        package-root/opt/roboparty/bin/robopi-tui --version
+
     - name: Upload Debian package
       uses: actions/upload-artifact@v4
       with:

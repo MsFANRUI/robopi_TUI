@@ -12,8 +12,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def package_version(root=ROOT):
+    runtime_doc = root.parents[1] / 'share' / 'doc' / 'robopi-tui'
     for changelog in (root / 'debian' / 'changelog',
-                      root.parents[1] / 'share' / 'doc' / 'robopi-tui' / 'changelog.gz'):
+                      runtime_doc / 'changelog',
+                      runtime_doc / 'changelog.gz'):
         if not changelog.is_file():
             continue
         opener = gzip.open if changelog.suffix == '.gz' else open

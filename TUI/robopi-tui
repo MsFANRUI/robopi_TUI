@@ -17,7 +17,9 @@ ROOT = Path(__file__).resolve().parent
 STAGED = ROOT.parent / 'lib' / 'robopi-tui'
 MODULE_DIR = (ROOT if (ROOT / 'plugin_test_menu.py').is_file() else
               STAGED if (STAGED / 'plugin_test_menu.py').is_file() else
-              Path('/usr/lib/robopi-tui'))
+              Path('/opt/roboparty/lib/robopi-tui') if
+              (Path('/opt/roboparty/lib/robopi-tui') / 'plugin_test_menu.py').is_file()
+              else Path('/usr/lib/robopi-tui'))
 sys.path.insert(0, str(MODULE_DIR))
 sys.path.insert(0, str(MODULE_DIR if (MODULE_DIR / 'loader').is_dir() else ROOT.parent))
 from plugin_test_menu import load_catalog, plugin_tests_menu

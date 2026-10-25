@@ -66,9 +66,9 @@ python3 loader/plugin_executor.py --run RP001 --no-save
 python3 loader/plugin_executor.py --env csharp --list --no-save
 ```
 
-TUI 的标题、背景栏和 `--version` 都从 `debian/changelog` 读取包版本；安装后读取随包安装的 `changelog.gz`，不用在 Python 中另写版本号。TUI 默认只显示 `official` 项；主菜单切换 **Developer mode** 可查看全部 55 项，包括测试中、废弃和仅 C# 项。废弃项和仅 C# 项在 TUI 中不能运行。当前全部为 `testing`，所以要从开发者模式进入测试目录。插件各自维护 `PLUGIN['version']`，在菜单和报告中独立显示。主菜单的 **Plugin metadata** 可查看插件元数据；用 `sudo robopi-tui` 可以编辑生命周期和其他字段。编辑菜单与写入逻辑仍在 `loader/plugin_metadata.py`；字段以 JSON 格式展示和输入，实际写回的是 `plugins/` 中对应 `.py` 文件的 `PLUGIN` 字典，没有单独的插件 `.json` 文件。详细规则见[字段说明](plugins/README.md)，各项状态与判据见[自动生成清单](plugins/STATUS.md)。
+TUI 的标题、背景栏和 `--version` 都从 `debian/changelog` 读取包版本；安装后读取随包安装到 `/opt/roboparty/share/doc/robopi-tui/` 的 `changelog`，不用在 Python 中另写版本号。TUI 默认只显示 `official` 项；主菜单切换 **Developer mode** 可查看全部 55 项，包括测试中、废弃和仅 C# 项。废弃项和仅 C# 项在 TUI 中不能运行。当前全部为 `testing`，所以要从开发者模式进入测试目录。插件各自维护 `PLUGIN['version']`，在菜单和报告中独立显示。主菜单的 **Plugin metadata** 可查看插件元数据；用 `sudo robopi-tui` 可以编辑生命周期和其他字段。编辑菜单与写入逻辑仍在 `loader/plugin_metadata.py`；字段以 JSON 格式展示和输入，实际写回的是 `plugins/` 中对应 `.py` 文件的 `PLUGIN` 字典，没有单独的插件 `.json` 文件。详细规则见[字段说明](plugins/README.md)，各项状态与判据见[自动生成清单](plugins/STATUS.md)。
 
-ADB 上位机可调用 `python3 /usr/lib/robopi-tui/loader/plugin_executor.py --env csharp --client-id LINE-PC-01 --list` 或 `--run RP001`。从旧包升级的外部调用方需将脚本路径 `loader/runner.py` 改为 `loader/plugin_executor.py`；JSON 参数与返回格式未因文件重命名改变。`schema_version` 为 **3**；`--list` 返回 `tests[]`，`--run` 返回设备身份、时间、整体结论、计数及 `results[]`。C# 目录只包含允许该客户端的 23 项；配置动作与主动测试仅允许 TUI，调度器会拒绝 C# 指定运行。`--env` 是调用方声明，不是身份认证。进程退出码 0 仅表示报告生成，调用方必须检查 `outcome` 和每项 `result`。带 `secret` 字段的插件只能用 `--params-stdin` 从标准输入传 JSON，避免敏感值出现在进程命令行和报告中；目录的 `inputs[].when` 决定条件字段是否显示。
+ADB 上位机可调用 `python3 /opt/roboparty/lib/robopi-tui/loader/plugin_executor.py --env csharp --client-id LINE-PC-01 --list` 或 `--run RP001`。交互入口是 `/opt/roboparty/bin/robopi-tui`，系统兼容命令为 `/usr/bin/robopi-tui`。从旧包升级的外部调用方需将脚本路径 `loader/runner.py` 改为 `/opt/roboparty/lib/robopi-tui/loader/plugin_executor.py`；JSON 参数与返回格式未因文件重命名改变。`schema_version` 为 **3**；`--list` 返回 `tests[]`，`--run` 返回设备身份、时间、整体结论、计数及 `results[]`。C# 目录只包含允许该客户端的 23 项；配置动作与主动测试仅允许 TUI，调度器会拒绝 C# 指定运行。`--env` 是调用方声明，不是身份认证。进程退出码 0 仅表示报告生成，调用方必须检查 `outcome` 和每项 `result`。带 `secret` 字段的插件只能用 `--params-stdin` 从标准输入传 JSON，避免敏感值出现在进程命令行和报告中；目录的 `inputs[].when` 决定条件字段是否显示。
 
 每次执行生成一份 `/var/lib/robopi-tui/reports/<时间>_<run_id>.json`；顶层 `tui_version` 来自 changelog，`results[]` 每项均保存插件完整元数据快照 `plugin`（含独立版本、判据、安全等级、依赖和参数声明）、脱敏的实际输入 `parameters`、`exit_code`、结果、`details` 与带 UTC 时间戳的 `logs`。插件返回 `error` 时，其诊断 `details` 也保留。TUI 结果页展示这些字段和全部捕获日志，C# 客户端可从 JSON 响应读取同一内容。stdout/stderr 时间戳是执行器捕获时刻，不是每行原始产生时间；插件内部子命令的输出以插件写入 `details` 或 stderr 的内容为准。
 
@@ -89,6 +89,10 @@ python3 loader/generate_plugin_status.py --check
 python3 -m unittest discover -s loader/tests -v
 dpkg-buildpackage -us -uc -b
 sudo apt install ../robopi-tui_*_arm64.deb
+
+# 安装后路径
+/opt/roboparty/bin/robopi-tui --version
+python3 /opt/roboparty/lib/robopi-tui/loader/plugin_validator.py
 ```
 
 RP046 在 Python 插件内保存 X11 的 DPMS、待机和熄屏配置文本。“关闭熄屏”将其原子写入 `/etc/X11/xorg.conf.d/10-blanking.conf`；“开启熄屏”会删除该文件。Labwc 分支使用自己的 autostart 配置。HiPNUC 帧协议及 USB 枚举逻辑放在各自的测试插件中；`loader/plugin_helpers.py` 只保留跨插件通用的参数、结果、文本读取和文件写入函数。

@@ -1,3 +1,11 @@
+robopi-tui (1.0.0) unstable; urgency=medium
+
+  * Install the TUI runtime, plugins and project documentation under
+    /opt/roboparty following the RoboParty package layout.
+  * Provide /usr/bin/robopi-tui as a compatibility symlink.
+
+ -- wentywenty <2321901849@qq.com>  Sun, 25 Oct 2026 20:10:00 +0800
+
 robopi-tui (0.2.10) unstable; urgency=medium
 
   * Share changelog-derived package version between the TUI and diagnostic reports.

@@ -164,4 +164,4 @@ python3 loader/plugin_executor.py --list --no-save
 
 `sudo robopi-tui` 的 **Plugin metadata** 菜单可查看和修改字段；实现位于 `loader/plugin_metadata.py`，修改直接写回插件 `.py` 文件，经全部插件校验后保存。软件包升级可能覆盖板端修改，需将长期变更同步到源码。`official` 只在板端及工装验收后人工设置，单次 `pass` 不会自动晋级。
 
-执行器对每项记录开始、结束时间，并将完整 `PLUGIN` 字段快照（秘密输入默认值脱敏）、独立插件版本、脱敏参数、退出码、`details` 和带时间戳的 stdout/stderr/调度日志一并写入 `results[]`。正常返回 `error` 的插件也应在 `details` 中写清失败阶段和原始错误信息，执行器不会清空这些明细。报告默认存入 `/var/lib/robopi-tui/reports/<时间>_<run_id>.json`，调用索引在 `calls/` 子目录；`--no-save` 只关闭执行器归档。`lifecycle` 是插件验收状态，`status` 是单次运行结果，两者独立。目录与报告的 `schema_version` 为 3；调用方必须检查整体 `outcome` 和每项 `result`，不能只看进程退出码。
+执行器对每项记录开始、结束时间，并将完整 `PLUGIN` 字段快照（秘密输入默认值脱敏）、独立插件版本、脱敏参数、退出码、`details` 和带时间戳的 stdout/stderr/调度日志一并写入 `results[]`。正常返回 `error` 的插件也应在 `details` 中写清失败阶段和原始错误信息，执行器不会清空这些明细。安装后执行器位于 `/opt/roboparty/lib/robopi-tui/loader/plugin_executor.py`；报告默认存入 `/var/lib/robopi-tui/reports/<时间>_<run_id>.json`，调用索引在 `calls/` 子目录；`--no-save` 只关闭执行器归档。`lifecycle` 是插件验收状态，`status` 是单次运行结果，两者独立。目录与报告的 `schema_version` 为 3；调用方必须检查整体 `outcome` 和每项 `result`，不能只看进程退出码。
