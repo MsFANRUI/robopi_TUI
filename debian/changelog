@@ -1,3 +1,10 @@
+robopi-tui (1.0.1) unstable; urgency=medium
+
+  * Remove designated version
+
+ -- wentywenty <2321901849@qq.com>  Sun, 25 Oct 2026 20:10:00 +0800
+
+
 robopi-tui (1.0.0) unstable; urgency=medium
 
   * Install the TUI runtime, plugins and project documentation under
