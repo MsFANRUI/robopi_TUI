@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from loader import board_backend as backend
 from loader import board_packages as packages
-from loader import studio_api as api
+from loader import task_runtime as api
 
 
 class BackendTests(unittest.TestCase):

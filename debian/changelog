@@ -1,3 +1,13 @@
+robopi-tui (1.1.0) unstable; urgency=medium
+
+  * Add a stable public CLI with JSON-RPC task discovery and durable jobs.
+  * Separate terminal task execution from the legacy Studio API adapter;
+    preserve API-v1 clients and existing jobs across package updates.
+  * Document protocol compatibility and keep new tasks and parameter rows
+    independent of client software versions.
+
+ -- wentywenty <2321901849@qq.com>  Thu, 29 Oct 2026 09:00:00 +0800
+
 robopi-tui (1.0.4) unstable; urgency=medium
 
   * Display firmware path, size, checksum and flasher information as named

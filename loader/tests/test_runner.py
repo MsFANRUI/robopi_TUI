@@ -328,13 +328,13 @@ class RunnerTests(unittest.TestCase):
     def test_apt_terminal_plugin_uses_shared_durable_backend(self):
         self.assertEqual(APT['PLUGIN'].get('depends_on', []), [])
         from unittest.mock import patch
-        with patch('loader.studio_api.run_for_tui', return_value={'status': 'needs_review'}) as shared:
+        with patch('loader.task_runtime.run_for_tui', return_value={'status': 'needs_review'}) as shared:
             self.assertEqual('needs_review', APT['probe']()['status'])
             shared.assert_called_once_with('apt-upgrade')
 
     def test_hpm_terminal_plugin_uses_shared_durable_backend(self):
         from unittest.mock import patch
-        with patch('loader.studio_api.run_for_tui', return_value={'status': 'fail'}) as shared:
+        with patch('loader.task_runtime.run_for_tui', return_value={'status': 'fail'}) as shared:
             self.assertEqual('fail', HPM['probe']()['status'])
             shared.assert_called_once_with('hpm-flash')
 

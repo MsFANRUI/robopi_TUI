@@ -29,7 +29,7 @@ PLUGIN = {
 
 
 def probe():
-    from loader.studio_api import run_for_tui
+    from loader.task_runtime import run_for_tui
     return run_for_tui('hpm-flash')
 
 

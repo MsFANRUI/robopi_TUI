@@ -270,7 +270,7 @@ def snapshot(refreshed_at=None):
     else:
         packages = [dict(name=name, installedVersion='未确认', latestVersion='未确认',
                          status='查询失败', source='apt.roboparty.com', architecture='') for name in FOCUS_PACKAGES]
-    return dict(schemaVersion=1, identity=raw['identity'], collectedAt=stamp,
+    return dict(schemaVersion=1, format='board-snapshot-v1', identity=raw['identity'], collectedAt=stamp,
                 parameters=parameters, softwarePackages=packages, can=can_check,
                 packageError=raw['packages']['error'], raw=raw)
 

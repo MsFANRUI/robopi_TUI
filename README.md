@@ -58,7 +58,11 @@ python3 loader/plugin_executor.py --list --no-save
 
 ## 调用与日志
 
-### Studio API v1（robopi-tui 1.0.2 起）
+### 通用任务命令行（robopi-tui 1.1.0 起）
+
+公共入口为 `robopi-tui rpc --protocol 1`，从 stdin 接收一行 JSON-RPC 2.0 请求。支持任务目录/描述、只读参数、任务提交/查询/历史/恢复；TUI 软件版本与通信协议独立。终端插件使用通用 `loader/task_runtime.py`，Studio 是调用者之一。已有 Studio API v1 保留兼容。
+
+完整命令、输入输出、退出码、任务生命周期、兼容矩阵与新增任务步骤见[命令行接口与兼容规范](docs/命令行接口与兼容规范.md)。以下是保留给旧客户端的 API v1 示例。
 
 Studio 通过 ADB 调用固定入口，只传操作名和 UUID，不发送 Python 代码、APT 命令或固件路径。板端采集、版本比较、整条升级/HPM/USB/CAN 流程由 TUI 负责。RP006 和 RP024 终端入口也调用同一持久任务实现；旧 schema v3 执行器仍保留原客户端限制。
 
@@ -81,7 +85,7 @@ HPM 操作先刷新源并安装 `roboparty-analyze`，从 `dpkg-query -L` 中选
 
 板端重启或进程异常退出会标记 `interrupted` 并锁定新任务。人工检查 `dpkg --audit`、任务日志、USB/CAN 和复位服务后，可用 `studio_api.py acknowledge <UUID>` 确认解除该锁；这个命令不修复系统、不重跑原任务。没有远程强杀升级/烧录接口，Studio 的“停止等待”只解除电脑等待。
 
-实现分工：`loader/studio_api.py` 管任务和协议，`board_backend.py` 管流程与判定，`board_snapshot.py` 管只读参数，`board_packages.py` 管源和版本。新增后端回归测试位于 `loader/tests/test_studio_backend.py`。
+实现分工：`loader/task_protocol.py` 管公共协议，`task_catalog.py` 管任务注册，`task_runtime.py` 管持久执行，`studio_api.py` 兼容旧入口；`board_backend.py` 管流程与判定，`board_snapshot.py` 管只读参数，`board_packages.py` 管源和版本。后端与协议测试位于 `loader/tests/test_studio_backend.py`、`test_task_protocol.py`。
 
 ```bash
 sudo robopi-tui
