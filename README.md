@@ -79,6 +79,8 @@ python3 /opt/roboparty/lib/robopi-tui/loader/studio_api.py active
 
 HPM 操作先刷新源并安装 `roboparty-analyze`，从 `dpkg-query -L` 中选唯一的包内 `ethercanfd_*.bin`，调用 `/opt/roboparty/bin/flash_hpm.sh`。脚本成功、正常 USB `1209:2323` 连续出现两次、同一 HPM/gs_usb 的 can0–can3 全部出现才通过；不发 CAN 帧、不做 Flash 字节读回。写操作目前限制已核对的 RoboPi2。
 
+1.1.1 起，四路识别与 CAN 配置分开显示。新增只读配置检查按 RoboPi2 默认值核对 UP、FD、1M/5M、MTU 72、队列 10000 和 ERROR-ACTIVE。DOWN、配置不符或信息不足会在参数中明确标记；`can-check`、`hpm-flash`、`pipeline` 存在配置问题时整体为 `needs_review`，并保留刷写与枚举的独立证据。不会自动修改接口或 base 包规则，通信协议仍为 1。
+
 1.0.3 起，包操作前检查日志空间：`/var/log` 可用不足8MiB时，仅检查 `/var/log/robopi/seven-YYYYMMDD-HHMMSS` 及 `/var/log.hdd/robopi` 的旧会话。必须有已结束记录、至少结束60秒、无进程占用、无符号链接或特殊文件、归档期间内容不变，才先压缩归档到私有 `/var/lib/robopi-tui/legacy-log-archives` 再删除旧目录；磁盘镜像同时处理，避免重启回灌。兼容旧 analyze 追加结束记录导致 manifest JSON 格式错误的已知格式。当前 `/home/robo/robopi-logs`、系统日志、APT日志和配置均不在清理范围。空间充足不清理；无法安全释放到至少2MiB时仍中止升级。实现为 `loader/board_log_cleanup.py`，归档路径和删除清单记入任务结果/事件。
 
 `start` 返回任务身份，`status` 同时返回阶段事件、终态和结果。最终结论检查 `outcome`（pass/fail/needs_review/error），不能仅看进程退出码。任务与日志在私有 `/var/lib/robopi-tui/studio-jobs/<UUID>/`，由 systemd 瞬态服务托管，断开 ADB/关闭 Studio 不会取消板端写入。相同 UUID 去重，冲突任务拒绝；重连只查询，不重放。升级前冻结 loader/plugins 到任务目录，APT 替换 TUI 不会改变本任务实现；下一次 API 调用读取新安装代码。旧任务归档由维护人员保留/清理，当前不自动删历史。

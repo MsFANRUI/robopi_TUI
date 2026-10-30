@@ -58,6 +58,49 @@ def check_can(devices, links):
             'interfaces': sorted(names), 'usb': usb}
 
 
+def check_can_configuration(recognition, links):
+    """Inspect the RoboPi2 HPM defaults without changing links or sending frames."""
+    if recognition['outcome'] != 'pass':
+        return dict(outcome='needs_review', message='HPM 四路未完整识别，无法确认 CAN 配置', interfaces=[])
+    rows = []
+    for link in links:
+        if (link['ifname'] not in EXPECTED_CAN or link.get('driver') != 'gs_usb'
+                or (link.get('usbParent') or {}).get('path') != recognition['usb']['path']):
+            continue
+        info = (link.get('linkinfo') or {}).get('info_data') or {}
+        issues, unknown = [], []
+
+        def expect(actual, expected, label):
+            if actual is None:
+                unknown.append(label + '未采集到')
+            elif actual != expected:
+                issues.append(f'{label}={actual}，期望 {expected}')
+
+        if 'flags' not in link:
+            unknown.append('接口启用状态未采集到')
+        elif 'UP' not in link['flags']:
+            issues.append('接口 DOWN，尚未启用')
+        expect(link.get('mtu'), 72, 'MTU')
+        expect(link.get('txqlen'), 10000, '发送队列长度')
+        if 'ctrlmode' not in info:
+            unknown.append('FD 模式未采集到')
+        elif 'FD' not in info['ctrlmode']:
+            issues.append('FD 未开启')
+        expect((info.get('bittiming') or {}).get('bitrate'), 1000000, '仲裁速率')
+        expect((info.get('data_bittiming') or {}).get('bitrate'), 5000000, '数据速率')
+        expect(info.get('state'), 'ERROR-ACTIVE', 'CAN 控制器状态')
+        outcome = 'fail' if issues else 'needs_review' if unknown else 'pass'
+        rows.append(dict(ifname=link['ifname'], outcome=outcome,
+                         message='；'.join(issues + unknown) if issues or unknown
+                         else 'UP；FD；1M/5M；MTU 72；队列 10000；ERROR-ACTIVE'))
+    outcome = 'fail' if any(row['outcome'] == 'fail' for row in rows) else (
+        'needs_review' if len(rows) != 4 or any(row['outcome'] != 'pass' for row in rows) else 'pass')
+    message = ('HPM 四路配置符合 RoboPi2 默认值（未发送 CAN 帧，未验证电机通信）'
+               if outcome == 'pass' else 'HPM CAN 配置异常或未确认：' + '；'.join(
+                   row['ifname'] + '：' + row['message'] for row in rows if row['outcome'] != 'pass'))
+    return dict(outcome=outcome, message=message, interfaces=rows)
+
+
 def usb_ready(devices):
     normal = [usb for usb in devices if (usb['vid'].lower(), usb['pid'].lower()) == NORMAL]
     boot = [usb for usb in devices if (usb['vid'].lower(), usb['pid'].lower()) == BOOT]
@@ -228,9 +271,14 @@ def snapshot(refreshed_at=None):
             add('HPM USB', '设备', item)
     links = section('can', 'CAN')
     can_check = None
+    can_configuration = None
     if usb is not None and links is not None:
         can_check = check_can(usb, links)
         add('CAN', 'HPM四路识别', can_check['message'], can_check['outcome'])
+        can_configuration = check_can_configuration(can_check, links)
+        add('CAN', 'HPM配置检查', can_configuration['message'], can_configuration['outcome'])
+        for row in can_configuration['interfaces']:
+            add('CAN', 'HPM配置 ' + row['ifname'], row['message'], row['outcome'])
         for link in links:
             add('CAN', link['ifname'], link)
     firmware = section('firmware', '固件文件')
@@ -272,6 +320,7 @@ def snapshot(refreshed_at=None):
                          status='查询失败', source='apt.roboparty.com', architecture='') for name in FOCUS_PACKAGES]
     return dict(schemaVersion=1, format='board-snapshot-v1', identity=raw['identity'], collectedAt=stamp,
                 parameters=parameters, softwarePackages=packages, can=can_check,
+                canConfiguration=can_configuration,
                 packageError=raw['packages']['error'], raw=raw)
 
 
@@ -300,5 +349,10 @@ def execute_action(action, emit):
     if action in ('apt-upgrade', 'pipeline'):
         if any(row['status'] != '已是源最新版本' for row in data['softwarePackages']):
             outcome = 'needs_review'
+    can_warning = action in ('can-check', 'hpm-flash', 'pipeline') and (
+        data.get('canConfiguration') or {}).get('outcome') != 'pass'
+    if can_warning and outcome == 'pass':
+        outcome = 'needs_review'
     return dict(outcome=outcome, summary='板端任务完成' if outcome == 'pass'
+                else '任务已执行，HPM CAN 配置异常或未确认，请查看 CAN 明细' if can_warning
                 else '任务已执行，部分版本或设备未达到期望，请查看明细', snapshot=data, details=detail)
