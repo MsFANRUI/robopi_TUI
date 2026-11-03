@@ -1,3 +1,13 @@
+robopi-tui (1.1.2) unstable; urgency=medium
+
+  * Add the board serial number (RP034) to snapshots as a system parameter,
+    leaving the job identity fields unchanged.
+  * Add a GSUSB USB-CAN summary (RP013) to snapshots: HPM devices bound to
+    gs_usb and their CAN interfaces, with USB speed in HPM USB device rows.
+  * Keep the board serial in RP013 device details; no change to the protocol.
+
+ -- wentywenty <2321901849@qq.com>  Tue, 03 Nov 2026 16:00:00 +0800
+
 robopi-tui (1.1.1) unstable; urgency=medium
 
   * Report HPM CAN configuration separately from USB/driver discovery.

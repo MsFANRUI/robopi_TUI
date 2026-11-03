@@ -21,7 +21,7 @@
 | RP010 | 1.0 | Interfaces | HiPNUC 固件版本 | testing | test / query | TUI+C# | 是 | RP009 | 寄存器 `0x0078` 返回非零版本；不比较最低版本。 |
 | RP011 | 1.0 | USB | USB 设备清单 | testing | test / passive | TUI+C# | 是 | 无 | 记录 USB 设备和枚举速率，结果待人工复核。 |
 | RP012 | 1.0 | USB | USB 3.0 扩展坞 | testing | test / passive | TUI+C# | 是 | 无 | 外部 Hub 的设备类或接口类为 `09`，速率至少 5000 Mb/s。 |
-| RP013 | 1.0 | USB | GSUSB USB-CAN 接口 | testing | test / passive | TUI+C# | 是 | 无 | `1209:2323` 绑定 `gs_usb` 且出现 CAN 网络接口；不验证 CAN 通信。 |
+| RP013 | 1.1 | USB | GSUSB USB-CAN 接口 | testing | test / passive | TUI+C# | 是 | 无 | `1209:2323` 绑定 `gs_usb` 且出现 CAN 网络接口；不验证 CAN 通信。 |
 | RP014 | 1.0 | USB | USB Hub 复位压力测试 | testing | test / active | TUI | 是 | RP012 | 100 次复位后身份恢复、无新增内核错误且每轮成功；会短暂断开 USB。 |
 | RP015 | 1.0 | Interfaces | GPIO 引脚快照 | testing | test / passive | TUI+C# | 是 | 无 | 记录 GPIO 状态，结果待人工复核。 |
 | RP016 | 1.0 | Addon | 灯板就绪状态 | testing | test / passive | TUI+C# | 是 | 无 | WS2812 字符设备与工具齐备仍待人工复核，需要目视确认。 |

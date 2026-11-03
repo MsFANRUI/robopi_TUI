@@ -16,7 +16,7 @@ PLUGIN = {
     'clients': ['tui', 'csharp'],
     'author': 'wentywenty',
     'name': 'GSUSB USB-CAN interface',
-    'version': '1.0',
+    'version': '1.1',
     'lifecycle': 'testing',
     'safety': 'passive',
     'category': 'USB',
@@ -43,6 +43,7 @@ def probe(root=USB_ROOT):
         matches.append({'device': directory.name, 'vendor_id': read_text(vendor_file),
                         'product_id': read_text(directory / 'idProduct'),
                         'name': read_text(directory / 'product'),
+                        'serial': read_text(directory / 'serial'),
                         'speed_mbps': read_text(directory / 'speed'),
                         'usb_version': read_text(directory / 'version'),
                         'device_version': read_text(directory / 'bcdDevice')})

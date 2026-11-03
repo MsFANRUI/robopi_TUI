@@ -58,10 +58,21 @@ def identity():
                 hostname=text('/etc/hostname'), uid=os.geteuid())
 
 
+def board_serial():
+    """Match RP034: prefer the device-tree serial, then the kernel CPU fallback."""
+    for path in ('/proc/device-tree/serial-number', '/sys/firmware/devicetree/base/serial-number'):
+        value = text(path, True)
+        if value:
+            return value
+    cpuinfo = text('/proc/cpuinfo', True) or ''
+    match = re.search(r'(?im)^Serial\s*:\s*(\S+)', cpuinfo)
+    return match.group(1) if match else ''
+
+
 def system():
     return dict(os=text('/etc/os-release'), kernel=checked(['uname', '-srmo']),
                 model=text('/proc/device-tree/model', True) or 'Unsupported',
-                uptime=text('/proc/uptime'), architecture=checked(['dpkg', '--print-architecture']))
+                uptime=text('/proc/uptime'), architecture=checked(['dpkg', '--print-architecture']), serial=board_serial())
 
 
 def resources():
@@ -96,7 +107,7 @@ def network():
 def usb_info(path):
     return dict(path=str(path.resolve()), vid=text(path / 'idVendor'), pid=text(path / 'idProduct'),
                 serial=text(path / 'serial', True) or '', product=text(path / 'product', True) or '',
-                bcdDevice=text(path / 'bcdDevice'), bcdUSB=text(path / 'version', True) or '')
+                bcdDevice=text(path / 'bcdDevice'), bcdUSB=text(path / 'version', True) or '', speedMbps=text(path / 'speed', True) or '')
 
 
 def usb():

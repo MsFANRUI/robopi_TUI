@@ -31,6 +31,29 @@ class BackendTests(unittest.TestCase):
         self.assertEqual('fail', backend.check_can([self.usb()], self.links(path='other-usb'))['outcome'])
         self.assertEqual('fail', backend.check_can([self.usb(), self.usb()], self.links())['outcome'])
 
+    def test_snapshot_exposes_rp034_serial_and_rp013_gsusb_summary(self):
+        raw = {
+            'identity': {'machineId': 'machine', 'bootId': 'boot', 'hostname': 'board',
+                         'uid': 0},
+            'endIdentity': {'machineId': 'machine', 'bootId': 'boot', 'hostname': 'board',
+                            'uid': 0},
+            'collectedAt': '2026-11-03T00:00:00+00:00',
+            'system': {'data': {'model': 'RK3588S', 'kernel': 'Linux', 'architecture': 'arm64', 'serial': 'BOARD-001'}, 'error': None},
+            'resources': {'data': {}, 'error': None}, 'network': {'data': {}, 'error': None},
+            'usb': {'data': [self.usb()], 'error': None},
+            'can': {'data': self.links(), 'error': None},
+            'firmware': {'data': {'files': [], 'scriptPresent': False}, 'error': None},
+            'udev': {'data': [], 'error': None}, 'sources': {'data': [], 'error': None},
+            'services': {'data': [], 'error': None},
+            'packages': {'data': {'items': [], 'refreshedAt': None}, 'error': None},
+        }
+        with patch.object(backend.board_snapshot, 'collect', return_value=raw):
+            snapshot = backend.snapshot()
+        values = {(item['group'], item['name']): item for item in snapshot['parameters']}
+        self.assertEqual('BOARD-001', values[('系统', '板卡序列号')]['value'])
+        self.assertEqual('pass', values[('HPM USB', 'GSUSB USB-CAN')]['outcome'])
+        self.assertIn('can0', values[('HPM USB', 'GSUSB USB-CAN')]['value'])
+
     def test_usb_needs_two_consecutive_normal_enumerations_and_no_boot_device(self):
         samples = iter([[], [self.usb()], [], [self.usb()], [self.usb()]])
         observed = backend.wait_usb(lambda: next(samples), lambda _: None, 5)

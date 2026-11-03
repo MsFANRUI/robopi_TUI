@@ -257,7 +257,7 @@ def snapshot(refreshed_at=None):
         data = section(key, group)
         if data:
             labels = {'os': '当前系统', 'kernel': '内核', 'model': '板型', 'uptime': '运行时间',
-                      'architecture': '架构', 'memory': '内存', 'rootAvailableBytes': '根分区可用字节',
+                      'architecture': '架构', 'serial': '板卡序列号', 'memory': '内存', 'rootAvailableBytes': '根分区可用字节',
                       'temperatures': '温度', 'disks': '各分区空间', 'load': 'CPU负载',
                       'addresses': '接口地址', 'routes': '路由', 'dns': 'DNS配置',
                       'dnsLinks': '各链路DNS', 'usbLink': 'USB网络链路'}
@@ -270,6 +270,20 @@ def snapshot(refreshed_at=None):
         for item in usb:
             add('HPM USB', '设备', item)
     links = section('can', 'CAN')
+    if usb is not None and links is not None:
+        gsusb_devices = []
+        for item in usb:
+            interfaces = sorted({link['ifname'] for link in links
+                                 if link.get('driver') == 'gs_usb'
+                                 and (link.get('usbParent') or {}).get('path') == item.get('path')})
+            gsusb_devices.append((item, interfaces))
+        ready = [item for item, interfaces in gsusb_devices if interfaces]
+        interface_text = ', '.join(
+            f"{item.get('vid', '?')}:{item.get('pid', '?')} -> {', '.join(interfaces)}"
+            for item, interfaces in gsusb_devices if interfaces) or '未发现 gs_usb CAN 接口'
+        add('HPM USB', 'GSUSB USB-CAN',
+            f"{len(ready)}/{len(gsusb_devices)} 个设备绑定 gs_usb；{interface_text}",
+            'pass' if ready else 'fail')
     can_check = None
     can_configuration = None
     if usb is not None and links is not None:
