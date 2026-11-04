@@ -2,16 +2,16 @@
 # SPDX-License-Identifier: GPL-3.0
 # Copyright (C) 2026 wentywenty
 
-"""Write and verify one LRO motor's limits through motors_py."""
+"""Deploy motion-team parameters to configured LRO motors on can0-can3."""
 
 import argparse
 import json
 import os
 from pathlib import Path
-import re
+import runpy
+import shutil
 import subprocess
 import sys
-import time
 import uuid
 
 import yaml
@@ -24,218 +24,184 @@ PLUGIN = {
     'station': ['robopi2', 'rdkx5', 'opi5pro'],
     'clients': ['tui'],
     'author': 'wentywenty',
-    'name': 'Program one LRO motor parameters',
-    'version': '1.0',
+    'name': 'Deploy LRO motor parameters on can0-can3',
+    'version': '2.2',
     'lifecycle': 'testing',
     'safety': 'active',
     'category': 'Motor',
     'batch': False,
-    'confirm': 'Confirm one isolated motor, exclusive CAN ownership, current limit, emergency stop and on-site supervision. Preserve CAN timeout?',
+    'confirm': 'Write motion-team parameters to ALL configured LRO motors on can0-can3? Stop motion control first. This also sets CAN_TIMEOUT=0 (timeout protection disabled) and writes Pn settings. Power-cycle the motors after success.',
     'inputs': [
         {
+            'name': 'robot',
+            'label': '选择机器人配置',
+            'type': 'choice',
+            'choices': ['24 自由度 (rp1_24dof)', '28 自由度 (rp1)', '自定义路径'],
+            'default': '自定义路径',
+            'required': True,
+        },
+        {
             'name': 'config',
-            'label': 'Absolute robot.yaml path',
+            'label': 'robot.yaml 绝对路径',
             'type': 'text',
             'pattern': '/[^\n]+',
             'required': True,
-            'default': '/opt/roboparty/share/roboparty_inference/robots/rp1/robot.yaml',
-        },
-        {
-            'name': 'interface',
-            'label': 'CAN interface',
-            'type': 'text',
-            'pattern': 'can[0-9]+',
-            'required': True,
-        },
-        {
-            'name': 'motor_id',
-            'label': 'Motor ID',
-            'type': 'integer',
-            'minimum': 1,
-            'maximum': 2047,
-            'required': True,
-        },
-        {
-            'name': 'isolated',
-            'label': 'Motor isolated and supervised',
-            'type': 'boolean',
-            'required': True,
+            'when': {'robot': '自定义路径'},
         },
     ],
     'requires': ['can'],
     'depends_on': ['RP001'],
-    'timeout_s': 120,
+    'timeout_s': 3600,
     'documentation': {
-        'title': '单台 LRO 电机参数刷写',
-        'criterion': '选择并隔离一台电机，逐项读回且 `CAN_TIMEOUT` 不变；不验证断电保持。',
+        'title': 'can0-can3 LRO 电机参数批量写入',
+        'criterion': '按实际 robot.yaml 调用运控脚本并行写入 can0-can3 上的 LRO 电机并读回；包含 CAN_TIMEOUT=0 与 Pn 参数，成功后需电机重新上下电。',
     },
 }
 
-
-# Values match test/deploy_motorlro_params.py; CAN_TIMEOUT is read but never written.
-MODEL_PARAMS = {
-    0: {'kp': 500.0, 'kd': 50.0, 'pos': 12.5, 'spd': 21.0, 'tor': 36.0},
-    1: {'kt': 1.86, 'kp': 500.0, 'kd': 50.0, 'pos': 12.5, 'spd': 21.89, 'tor': 35.3},
-    2: {'kt': 2.22, 'kp': 500.0, 'kd': 50.0, 'pos': 12.5, 'spd': 16.13, 'tor': 56.5},
-    3: {'kt': 2.44, 'kp': 500.0, 'kd': 50.0, 'pos': 12.5, 'spd': 14.24, 'tor': 141.7},
-}
-SIGNED = {'pos', 'spd', 'tor'}
-KEYS = ('kt', 'kp', 'kd', 'pos', 'spd', 'tor')
+SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'deploy_motorlro_params.py'
 JOURNAL_DIR = Path('/var/lib/robopi-tui/reports/motor-params')
+INTERFACES = ('can0', 'can1', 'can2', 'can3')
+ROBOT_FOLDERS = {'24 自由度 (rp1_24dof)': 'rp1_24dof', '28 自由度 (rp1)': 'rp1'}
 
 
-def select_target(path, interface, motor_id):
-    config = yaml.safe_load(path.read_text(encoding='utf-8'))
-    motors = config.get('motors') if isinstance(config, dict) else None
+def config_roots():
+    roots = [Path('/opt/roboparty/share/roboparty_inference/robots')]
+    homes = [Path('/root'), *sorted(Path('/home').glob('*'))]
+    for base in dict.fromkeys([Path.cwd(), Path('/opt/roboparty'), *homes]):
+        roots.extend((base / 'roboparty_deploy/src/inference/robots',
+                      base / 'src/inference/robots'))
+    return roots
+
+
+def resolve_config(robot, config=None, roots=None):
+    if robot == '自定义路径':
+        if config is None:
+            raise ValueError('请填写 robot.yaml 绝对路径')
+        return Path(config)
+    if robot not in ROBOT_FOLDERS:
+        raise ValueError(f'Unknown robot selection: {robot}')
+    if config is not None:
+        raise ValueError('预设机器人选项不能同时指定自定义路径')
+    matches = sorted({path.resolve() for root in (config_roots() if roots is None else roots)
+                      if (path := root / ROBOT_FOLDERS[robot] / 'robot.yaml').is_file()})
+    if not matches:
+        raise ValueError(f'未找到 {robot} 的 robot.yaml，请返回选择“自定义路径”')
+    if len(matches) != 1:
+        raise ValueError('找到多份配置，请选择“自定义路径”指定实际文件：' +
+                         ', '.join(str(path) for path in matches))
+    return matches[0]
+
+
+def select_targets(config, deploy):
+    motors = config.get('motors')
     if not isinstance(motors, dict):
         raise ValueError('robot.yaml has no motors mapping')
-    names = motors.get('motor_interface')
-    counts = motors.get('motor_num')
-    types = motors.get('motor_type')
-    protocols = motors.get('motor_interface_type')
-    ids = motors.get('motor_id')
-    models = motors.get('motor_model')
-    if not all(isinstance(value, list) for value in (names, counts, types,
-                                                     protocols, ids, models)):
+    fields = ('motor_interface', 'motor_num', 'motor_type', 'motor_id', 'motor_model')
+    if any(not isinstance(motors.get(key), list) for key in fields):
         raise ValueError('robot.yaml motor arrays are incomplete')
-    if not len(names) == len(counts) == len(types) == len(protocols):
-        raise ValueError('robot.yaml motor bus arrays have different lengths')
-    if any(type(count) is not int or count < 0 for count in counts):
-        raise ValueError('robot.yaml motor counts are invalid')
-    if len(ids) != sum(counts) or len(models) != len(ids):
-        raise ValueError('robot.yaml motor IDs and models do not match bus counts')
-    matches = []
-    offset = 0
-    for name, count, kind, protocol in zip(names, counts, types, protocols):
-        if name == interface:
-            matches.extend((kind, protocol, models[index])
-                           for index in range(offset, offset + count)
-                           if ids[index] == motor_id)
-        offset += count
-    if (len(matches) != 1 or matches[0][0] != 'LRO'
-            or matches[0][1] not in ('canfd', 'ethercanfd')
-            or type(matches[0][2]) is not int or matches[0][2] not in MODEL_PARAMS):
-        raise ValueError('Select one configured LRO CAN-FD motor with a known model')
-    return matches[0][2]
+    names, counts = motors['motor_interface'], motors['motor_num']
+    if (len(names) != len(counts) or len(names) != len(motors['motor_type'])
+            or any(not isinstance(name, str) for name in names)
+            or len(set(names)) != len(names)
+            or any(type(count) is not int or count < 0 for count in counts)):
+        raise ValueError('robot.yaml motor bus arrays are invalid')
+    if any(len(motors[key]) != sum(counts) for key in ('motor_id', 'motor_model')):
+        raise ValueError('robot.yaml motor counts do not match IDs/models')
+    protocols = motors.get('motor_interface_type')
+    if protocols is not None and (not isinstance(protocols, list) or len(protocols) != len(names)):
+        raise ValueError('robot.yaml motor_interface_type does not match buses')
+    if any(type(value) is not int for key in ('motor_id', 'motor_model') for value in motors[key]):
+        raise ValueError('Motor IDs and models must be integers')
+    targets = [target for target in deploy['build_motor_targets'](config, 'LRO')
+               if target.iface in INTERFACES]
+    if not targets:
+        raise ValueError('No configured LRO motors on can0-can3')
+    seen = set()
+    for target in targets:
+        identity = (target.iface, target.motor_id)
+        if identity in seen or not 1 <= target.motor_id <= 0x7FE:
+            raise ValueError(f'Invalid or duplicate motor ID: {identity}')
+        if target.model not in deploy['MODEL_PARAMS']:
+            raise ValueError(f'Unknown model {target.model} for {identity}')
+        if target.iface_type not in ('can', 'canfd', 'ethercanfd'):
+            raise ValueError(f'Unsupported interface type: {target.iface_type}')
+        seen.add(identity)
+    return targets
 
 
-def link_ready(interface):
-    completed = subprocess.run(['ip', '-j', '-details', 'link', 'show', 'dev', interface],
-                               capture_output=True, text=True, timeout=3, check=True)
+def check_link(interface):
+    completed = subprocess.run(['ip', '-j', 'link', 'show', 'dev', interface],
+                               capture_output=True, text=True, check=True, timeout=3)
     links = json.loads(completed.stdout)
     if len(links) != 1 or 'UP' not in links[0].get('flags', []):
         raise ValueError(f'{interface} is not UP')
-    can = (links[0].get('linkinfo') or {}).get('info_data') or {}
-    if can.get('state') != 'ERROR-ACTIVE':
-        raise ValueError(f'{interface} CAN state is {can.get("state")}')
-    nominal = (can.get('bittiming') or {}).get('bitrate')
-    data = (can.get('data_bittiming') or {}).get('bitrate')
-    if links[0].get('mtu') != 72 or nominal != 1000000 or data != 5000000:
-        raise ValueError(f'{interface} must be CAN-FD at 1000000/5000000 bit/s')
-    return {'state': can['state'], 'bitrate': nominal, 'data_bitrate': data}
 
 
-def make_session(interface, motor_id, model):
-    site = (Path('/opt/roboparty/lib') /
-            f'python{sys.version_info.major}.{sys.version_info.minor}' / 'site-packages')
-    sys.path.insert(0, str(site))
-    from motors_py import LroParamSession
-    return LroParamSession(interface, motor_id, model)
+def deployment_lock():
+    from loader.task_runtime import control_lock
+    return control_lock()
 
 
-def expected_range(key, maximum):
-    return (-maximum if key in SIGNED else 0.0, maximum)
-
-
-def close_enough(actual, expected):
-    return abs(actual - expected) < max(0.001, abs(expected) * 0.01 + 0.001)
-
-
-def record(path, event, **fields):
-    with path.open('a', encoding='utf-8') as stream:
-        stream.write(json.dumps({'event': event, 'time_ns': time.time_ns(), **fields}) + '\n')
-        stream.flush()
-        os.fsync(stream.fileno())
-
-
-def probe(config, interface, motor_id, isolated, session_factory=make_session,
-          check_link=link_ready, is_root=None, journal_dir=JOURNAL_DIR,
-          pause=time.sleep):
-    if not isolated:
-        return result('fail', 'Single-motor isolation and supervision were not confirmed')
-    if not (os.geteuid() == 0 if is_root is None else is_root()):
-        return result('fail', 'Motor parameter flashing requires root')
-    if not re.fullmatch(r'can[0-9]+', interface or '') or type(motor_id) is not int:
-        return result('fail', 'A CAN interface and one numeric motor ID are required')
-    if motor_id < 1 or motor_id > 0x7FF:
-        return result('fail', 'Motor ID must be 1..2047')
-    if not config or not config.is_absolute():
-        return result('fail', 'An absolute robot.yaml path is required')
-    details = {'config': str(config), 'interface': interface, 'motor_id': motor_id,
-               'isolation_confirmed': True, 'completed_writes': []}
-    journal = None
+def probe(config=None, script=SCRIPT, journal_dir=JOURNAL_DIR, run=subprocess.run,
+          check=check_link, which=shutil.which, is_root=None, robot='自定义路径', roots=None,
+          lock=deployment_lock):
+    details = {'config': str(config) if config else None, 'power_cycle_required': False}
     try:
-        model = select_target(config, interface, motor_id)
-        details['model'] = model
-        details['link'] = check_link(interface)
-        session = session_factory(interface, motor_id, model)
-        params = MODEL_PARAMS[model]
-        before = {key: session.read_param(key) for key in KEYS if key in params}
-        timeout_before = session.read_param('can_timeout')
-        details['before'] = before
-        details['can_timeout_before_ms'] = timeout_before[1]
-        journal_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if journal_dir.is_symlink() or journal_dir.stat().st_mode & 0o077:
-            raise OSError(f'Motor journal directory is not private: {journal_dir}')
-        journal = journal_dir / f'{uuid.uuid4()}.jsonl'
-        with journal.open('x', encoding='utf-8') as stream:
-            os.fchmod(stream.fileno(), 0o600)
-        details['journal'] = str(journal)
-        record(journal, 'preflight', target={key: details[key]
-                                           for key in ('config', 'interface', 'motor_id', 'model')},
-               before=before, can_timeout_ms=timeout_before[1])
-        for key in KEYS:
-            if key not in params:
-                continue
-            expected = expected_range(key, params[key])
-            record(journal, 'write_started', key=key, expected=expected)
-            session.write_param(key, *expected)
-            pause(0.1)
-            actual = session.read_param(key)
-            record(journal, 'readback', key=key, actual=actual)
-            details['completed_writes'].append({'key': key, 'expected': expected,
-                                                'readback': actual})
-            if not all(close_enough(found, wanted)
-                       for found, wanted in zip(actual, expected)):
-                record(journal, 'stopped', reason='readback_mismatch', key=key)
-                return result('fail', f'{key} readback differs; remaining writes stopped',
-                              details=details)
-        timeout_after = session.read_param('can_timeout')
-        details['can_timeout_after_ms'] = timeout_after[1]
-        if timeout_after != timeout_before:
-            record(journal, 'stopped', reason='can_timeout_changed')
-            return result('fail', 'Motor CAN timeout changed unexpectedly', details=details)
-        record(journal, 'complete', written=len(details['completed_writes']),
-               can_timeout_ms=timeout_after[1])
-    except (ImportError, OSError, ValueError, RuntimeError, yaml.YAMLError,
-            subprocess.SubprocessError) as exc:
-        if journal is not None:
-            try:
-                record(journal, 'stopped', reason=str(exc))
-            except OSError:
-                pass
-        status = 'fail' if isinstance(exc, (ValueError, RuntimeError)) else 'error'
-        return result(status, f'Motor parameter operation stopped: {exc}', details=details)
-    return result('pass', f'LRO motor {motor_id} on {interface}: limits written and read back',
-                  value=len(details['completed_writes']), unit='parameters', details=details)
+        if not (os.geteuid() == 0 if is_root is None else is_root()):
+            raise ValueError('Run sudo robopi-tui to write motor parameters')
+        config = resolve_config(robot, config, roots)
+        details.update(config=str(config), robot=robot)
+        if config is None or not config.is_absolute() or not config.is_file():
+            raise ValueError('Select the actual absolute robot.yaml file path')
+        for tool in ('cansend', 'candump', 'ip'):
+            if not which(tool):
+                raise ValueError(f'Missing command: {tool}; install can-utils and iproute2')
+        deploy = runpy.run_path(str(script))
+        source = config.read_text(encoding='utf-8')
+        parsed = yaml.safe_load(source)
+        if not isinstance(parsed, dict):
+            raise ValueError('robot.yaml must contain a mapping')
+        targets = select_targets(parsed, deploy)
+        interfaces = [name for name in INTERFACES if any(t.iface == name for t in targets)]
+        for interface in interfaces:
+            check(interface)
+        details['targets'] = [vars(target) for target in targets]
+        details['interfaces'] = interfaces
+        details['can_timeout_ms'] = 0
+        journal_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if journal_dir.is_symlink() or (os.name == 'posix' and journal_dir.stat().st_mode & 0o077):
+            raise ValueError(f'Motor log directory is not private: {journal_dir}')
+        folder = journal_dir / str(uuid.uuid4())
+        folder.mkdir(mode=0o700)
+        snapshot = folder / 'robot.yaml'
+        snapshot.write_text(source, encoding='utf-8')
+        snapshot.chmod(0o600)
+        log = folder / 'deploy.log'
+        command = [sys.executable, '-u', str(script), '--mode', 'write',
+                   '--config', str(snapshot), '--parallel']
+        for interface in interfaces:
+            command.extend(['--interface', interface])
+        details.update(log=str(log), config_snapshot=str(snapshot), command=command)
+        # Keep children in the executor's process group so its timeout stops every bus.
+        with lock(), log.open('x', encoding='utf-8') as output:
+            log.chmod(0o600)
+            completed = run(command, stdout=output, stderr=subprocess.STDOUT,
+                            text=True, check=False)
+        details['exit_code'] = completed.returncode
+        details['output_tail'] = log.read_text(encoding='utf-8', errors='replace')[-12000:]
+        if completed.returncode:
+            return result('fail', '电机参数写入或读回失败，可能已有部分参数写入；请检查日志。',
+                          details=details)
+        details['power_cycle_required'] = True
+        return result('pass', '配置中的 LRO 电机参数写入及读回完成。请重新给电机上下电后再使用。',
+                      value=len(targets), unit='motors', details=details)
+    except (OSError, ValueError, RuntimeError, yaml.YAMLError, subprocess.SubprocessError) as exc:
+        return result('error', f'Motor deployment stopped: {exc}', details=details)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=Path)
-    parser.add_argument('--interface')
-    parser.add_argument('--motor-id', type=int)
-    parser.add_argument('--isolated', action='store_true')
     parser.add_argument('--params')
     parser.add_argument('--params-stdin', action='store_true')
     args = parser.parse_args()
@@ -243,7 +209,4 @@ if __name__ == '__main__':
               if args.params is not None or args.params_stdin else {})
     config = params.get('config', args.config)
     print(json.dumps(probe(Path(config) if config else None,
-                           params.get('interface', args.interface),
-                           params.get('motor_id', args.motor_id),
-                           params.get('isolated', args.isolated)),
-                     ensure_ascii=False))
+                           robot=params.get('robot', '自定义路径')), ensure_ascii=False))
