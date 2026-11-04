@@ -4,7 +4,9 @@
 import argparse
 from contextlib import contextmanager
 import datetime
+import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -16,11 +18,17 @@ import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from loader import acceptance
 from loader import board_backend as backend
 from loader import task_catalog as catalog
+from loader.package_version import package_version
+
+logger = logging.getLogger(__name__)
 
 API_VERSION = 1
 JOB_ROOT = Path('/var/lib/robopi-tui/studio-jobs')
+CONTROL_LOCK = Path(os.environ.get('ROBOPARTY_CONTROL_LOCK', '/dev/shm/roboparty-control.lock'))
+MAINTENANCE_TASKS = frozenset(('apt-upgrade', 'hpm-flash', 'pipeline'))
 STATE_VERSION = 1
 TERMINAL = ('completed', 'failed', 'interrupted')
 
@@ -82,6 +90,34 @@ def lock(root, name):
             fcntl.flock(stream, fcntl.LOCK_UN)
 
 
+@contextmanager
+def control_lock(timeout=2.0):
+    """Serialize maintenance jobs with inference/start/flashing."""
+    import fcntl
+    fd = os.open(CONTROL_LOCK, os.O_RDWR | os.O_CREAT, 0o666)
+    acquired = False
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise JobError('ROBOT_BUSY', '机器人正被运控或其他维护任务占用')
+                time.sleep(0.1)
+        os.environ['ROBOPARTY_CONTROL_LOCK_HELD'] = '1'
+        try:
+            yield
+        finally:
+            os.environ.pop('ROBOPARTY_CONTROL_LOCK_HELD', None)
+    finally:
+        if acquired:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
 def job_path(root, job_id):
     identifier(job_id)
     directory = root / job_id
@@ -120,6 +156,8 @@ def read_status(root, job_id):
     current = backend.board_snapshot.identity()
     if state['identity']['machineId'] != current['machineId']:
         raise RuntimeError('Board identity mismatch')
+    if _serial_conflict(state['identity'], current):
+        raise JobError('BOARD_SERIAL_MISMATCH', 'Board serial mismatch')
     if state['state'] not in TERMINAL:
         reason = interruption_reason(state, current)
         if reason:
@@ -155,10 +193,17 @@ def active_job(root=JOB_ROOT):
     return read_status(root, read_json(path)['jobId'])
 
 
+def motor_status(config=None):
+    """Read-only motor error/state snapshot (never enables or sends)."""
+    from loader import motor_status as module
+    return module.read(config)
+
+
 def capabilities():
     identity = backend.board_snapshot.identity()
     version = backend.command(['dpkg-query', '-W', '-f=${Version}', 'robopi-tui'], 8)
-    return dict(apiVersion=API_VERSION, backend='robopi-tui', tuiVersion=version.stdout.strip(),
+    return dict(apiVersion=API_VERSION, backend='robopi-tui', server=backend.SERVER_NAME,
+                tuiVersion=version.stdout.strip(),
                 identity=identity, actions=list(catalog.TASKS), pluginMap={'apt-upgrade': 'RP006',
                 'hpm-flash': 'RP024', 'can-check': ['RP007', 'RP013']},
                 focusPackages=list(backend.FOCUS_PACKAGES),
@@ -198,6 +243,7 @@ def start(action, request_id, root=JOB_ROOT, launch=subprocess.run):
         unit = 'robopi-tui-job-' + request_id
         state = dict(apiVersion=API_VERSION, jobId=request_id, requestId=request_id,
                      stateVersion=STATE_VERSION, taskId=action,
+                     server=backend.SERVER_NAME,
                      action=action, state='queued', stage='queued', sequence=0,
                      summary='板端任务已创建', startedAt=backend.now(),
                      identity=backend.board_snapshot.identity(), unit=unit, pid=None)
@@ -217,6 +263,10 @@ def start(action, request_id, root=JOB_ROOT, launch=subprocess.run):
         except Exception as exc:
             state.update(state='failed', outcome='error', summary=str(exc), finishedAt=backend.now())
             atomic_json(directory / 'state.json', state)
+            try:
+                _write_acceptance(root, directory, state)
+            except Exception as record_exc:
+                logger.warning('acceptance record failed: %s', record_exc)
             raise
         # Return the queued identity; worker may already be updating state concurrently.
         return state
@@ -226,7 +276,12 @@ def worker(job_id, root=JOB_ROOT):
     directory = job_path(root, job_id)
     with lock(root, '.worker.lock'):
         state = read_json(directory / 'state.json')
-        if state['state'] != 'queued' or state['identity'] != backend.board_snapshot.identity():
+        current = backend.board_snapshot.identity()
+        stored = state['identity']
+        if (state['state'] != 'queued'
+                or stored.get('machineId') != current.get('machineId')
+                or stored.get('bootId') != current.get('bootId')
+                or _serial_conflict(stored, current)):
             raise RuntimeError('任务已结束/中断或板端身份改变；拒绝再次执行')
         state.update(state='running', pid=os.getpid())
         atomic_json(directory / 'state.json', state)
@@ -242,7 +297,12 @@ def worker(job_id, root=JOB_ROOT):
             atomic_json(directory / 'state.json', state)
 
         try:
-            result = catalog.get(state.get('taskId', state['action'])).execute(emit)
+            action = state.get('taskId', state['action'])
+            if action in MAINTENANCE_TASKS:
+                with control_lock():
+                    result = catalog.get(action).execute(emit)
+            else:
+                result = catalog.get(action).execute(emit)
             atomic_json(directory / 'result.json', result)
             state.update(state='completed', outcome=result['outcome'], summary=result['summary'])
         except BaseException as exc:
@@ -255,7 +315,57 @@ def worker(job_id, root=JOB_ROOT):
                 pass
         state['finishedAt'] = backend.now()
         atomic_json(directory / 'state.json', state)
+        try:
+            _write_acceptance(root, directory, state)
+        except Exception as exc:
+            logger.warning('acceptance record failed: %s', exc)
     return 0
+
+
+def _serial_conflict(stored, current):
+    a = str((stored or {}).get('serial') or '').strip()
+    b = str((current or {}).get('serial') or '').strip()
+    return bool(a and b and a != b)
+
+
+def _write_acceptance(root, directory, state):
+    result_file = directory / 'result.json'
+    digest = None
+    result = None
+    if result_file.is_file():
+        raw = result_file.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        try:
+            parsed = json.loads(raw.decode('utf-8'))
+            result = {'outcome': parsed.get('outcome'), 'summary': parsed.get('summary')}
+        except (UnicodeError, ValueError):
+            result = None
+    task = None
+    criteria_hash = None
+    try:
+        task = catalog.get(state.get('taskId') or state['action']).describe()
+        criteria_hash = hashlib.sha256(
+            json.dumps(task, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    except Exception:
+        pass
+    payload = {
+        'tuiVersion': package_version(),
+        'taskId': state.get('taskId') or state['action'],
+        'task': task,
+        'criteriaHash': criteria_hash,
+        'state': state['state'],
+        'outcome': state.get('outcome'),
+        'summary': state.get('summary'),
+        'startedAt': state.get('startedAt'),
+        'finishedAt': state.get('finishedAt'),
+        'result': result,
+        'resultPath': str(result_file) if result_file.is_file() else None,
+        'resultSha256': digest,
+        'jobPath': str(directory),
+    }
+    base = root.parent if root.name == 'studio-jobs' else root
+    return acceptance.write(base / 'acceptance', 'job', state['jobId'],
+                            state.get('identity'), payload, state.get('finishedAt'))
 
 
 def acknowledge(job_id, root=JOB_ROOT):
@@ -267,8 +377,11 @@ def acknowledge(job_id, root=JOB_ROOT):
         state = read_json(directory / 'state.json')
         if state['state'] != 'interrupted':
             raise ValueError('Only an interrupted task can be acknowledged')
-        if state['identity']['machineId'] != backend.board_snapshot.identity()['machineId']:
+        current = backend.board_snapshot.identity()
+        if state['identity']['machineId'] != current['machineId']:
             raise RuntimeError('Board identity mismatch')
+        if _serial_conflict(state['identity'], current):
+            raise JobError('BOARD_SERIAL_MISMATCH', 'Board serial mismatch')
         state.update(acknowledgedAt=backend.now(), state='failed', outcome='error',
                      summary=state['summary'] + '；操作员已人工核对并解除新任务锁定，原任务未重跑')
         atomic_json(directory / 'state.json', state)

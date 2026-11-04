@@ -20,6 +20,7 @@ PLUGIN = {
     'name': 'Screen blanking',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'action',
     'category': 'Display',
     'batch': False,

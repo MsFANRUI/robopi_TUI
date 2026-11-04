@@ -2,7 +2,7 @@
 
 本文件说明如何修改、新增和验证插件，以及每个元数据字段的含义。全部项目的生命周期、客户端、依赖和判据见[自动生成的状态清单](STATUS.md)。修改插件的 `PLUGIN` 字典后，运行 `python3 loader/generate_plugin_status.py --write` 更新清单，再用 `--check` 核对清单与源码一致。
 
-以下命令均从项目根目录 `deb/robopi_TUI/` 执行。先看[状态清单](STATUS.md)确认要修改的编号、风险级别和依赖，再编辑 `plugins/NNN-name.py`。`loader/examples/056-example.py` 是未注册模板，不会被执行或打包为正式插件。
+以下命令均从项目根目录 `deb/robopi_TUI/` 执行。先看[状态清单](STATUS.md)确认要修改的编号、风险级别和依赖，再编辑 `plugins/NNN-name.py`。`loader/examples/057-example.py` 是未注册模板，不会被执行或打包为正式插件。
 
 ## 修改现有插件
 
@@ -13,7 +13,7 @@
 
 ## 新增插件：可运行示例
 
-先确认编号未占用。当前最后一项是 `RP055`，可从 [056-example.py](../loader/examples/056-example.py) 复制为 `plugins/056-machine_id.py`；后续若已有 `RP056`，就改用下一个空号，并同步修改文件名与 `PLUGIN['id']`。新文件会被加载器自动发现，不用修改 TUI 菜单、加载器注册表或 Debian 安装清单。以下完整示例只读 `/etc/machine-id`，验证它是否为 32 位小写十六进制；它**不**证明设备 ID 唯一，判据中应明确这一边界。
+先确认编号未占用。当前最后一项是 `RP056`，可从 [057-example.py](../loader/examples/057-example.py) 复制为 `plugins/057-machine_id.py`；后续若已有 `RP057`，就改用下一个空号，并同步修改文件名与 `PLUGIN['id']`。新文件会被加载器自动发现，不用修改 TUI 菜单、加载器注册表或 Debian 安装清单。以下完整示例只读 `/etc/machine-id`，验证它是否为 32 位小写十六进制；它**不**证明设备 ID 唯一，判据中应明确这一边界。
 
 ```python
 #!/usr/bin/env python3
@@ -30,7 +30,7 @@ from loader.plugin_helpers import result
 
 
 PLUGIN = {
-    'id': 'RP056',
+    'id': 'RP057',
     'station': ['robopi2'],
     'clients': ['tui', 'csharp'],
     'author': 'your-name',
@@ -42,6 +42,7 @@ PLUGIN = {
     'version': '1.0',
     'lifecycle': 'testing',
     'kind': 'test',
+    'generic': False,
     'category': 'System',
     'batch': False,
     'safety': 'passive',
@@ -65,7 +66,7 @@ if __name__ == '__main__':
     print(json.dumps(probe(), ensure_ascii=False))
 ```
 
-把 `author` 换成实际编写人；`station` 只声明已打算支持的板卡，不能因为模板列了三种板卡就照抄。示例设 `batch=False`，方便先单项验证；是否纳入批量应在验收后决定。新插件的测试放在 `loader/tests/`，不要依赖板端文件来证明判据。上面这个示例可配套创建 `loader/tests/test_056_machine_id.py`，通过注入文件对象验证正常、缺失和错误格式三条路径：
+把 `author` 换成实际编写人；`station` 只声明已打算支持的板卡，不能因为模板列了三种板卡就照抄。示例设 `batch=False`，方便先单项验证；是否纳入批量应在验收后决定。新插件的测试放在 `loader/tests/`，不要依赖板端文件来证明判据。上面这个示例可配套创建 `loader/tests/test_057_machine_id.py`，通过注入文件对象验证正常、缺失和错误格式三条路径：
 
 ```python
 # SPDX-License-Identifier: GPL-3.0
@@ -78,7 +79,7 @@ from unittest.mock import Mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
-probe = runpy.run_path(str(ROOT / 'plugins' / '056-machine_id.py'))['probe']
+probe = runpy.run_path(str(ROOT / 'plugins' / '057-machine_id.py'))['probe']
 
 
 class MachineIdTests(unittest.TestCase):
@@ -119,6 +120,7 @@ class MachineIdTests(unittest.TestCase):
 | `version` | 必填，非空插件版本字符串；独立于 `debian/changelog` 的包版本，菜单和报告中记为 `plugin_version`。修改插件行为或判据时由维护者手动递增；加载器校验字段存在，但不会自动递增。 |
 | `lifecycle` | 必填，`testing`、`official` 或 `deprecated`；废弃项可列出但不执行。 |
 | `kind` | `test` 或 `action`，默认 `test`。 |
+| `generic` | 布尔值，默认 `False`；`True` 表示不依赖 RoboPi 专有硬件或路径，可在通用 Linux（x86/amd64）上测试。非 arm64 主机只列出并运行 `generic=True` 的插件。 |
 | `category` | 非空菜单分类，默认 `板端测试`。 |
 | `batch` | 布尔值，测试默认 `True`、动作默认 `False`；`False` 不进入 `--run all`。 |
 | `safety` | 必填，`passive`（只读观察）、`query`（定向只读请求）或 `active`（改变状态）；主动项只能指定编号运行。 |
@@ -160,7 +162,7 @@ python3 loader/plugin_executor.py --list --no-save
 
 格式检查器会验证字面量元数据、编号、依赖和 `__main__` 入口，但**不会运行插件**。生成器只从各插件的 `documentation` 等字段生成 [STATUS.md](STATUS.md)；新增插件后，清单应增加一行，改判据后相应行应更新。`--list --no-save` 仅检查目录能否被执行器加载；TUI 默认只显示 `official` 项，新增 `testing` 项须切换 **Developer mode** 才能在菜单中看到。
 
-确认代码与单元测试通过后，才在符合现场条件的目标板上**指定单项编号**验收，例如只读示例可用 `python3 loader/plugin_executor.py --run RP056 --no-save`。先核对该项的 `safety`、`requires`、`depends_on` 和操作影响；不要为了验证新增项而运行 `--run all`。`--no-save` 只关闭执行器报告归档，不保证插件自身不写日志。`pass` 只证明本插件的判据；需要人工复核的项目返回 `needs_review`。板端和工装验收后再由维护者将 `lifecycle` 从 `testing` 改为 `official`，并重新生成状态清单。
+确认代码与单元测试通过后，才在符合现场条件的目标板上**指定单项编号**验收，例如只读示例可用 `python3 loader/plugin_executor.py --run RP057 --no-save`。先核对该项的 `safety`、`requires`、`depends_on` 和操作影响；不要为了验证新增项而运行 `--run all`。`--no-save` 只关闭执行器报告归档，不保证插件自身不写日志。`pass` 只证明本插件的判据；需要人工复核的项目返回 `needs_review`。板端和工装验收后再由维护者将 `lifecycle` 从 `testing` 改为 `official`，并重新生成状态清单。
 
 `sudo robopi-tui` 的 **Plugin metadata** 菜单可查看和修改字段；实现位于 `loader/plugin_metadata.py`，修改直接写回插件 `.py` 文件，经全部插件校验后保存。软件包升级可能覆盖板端修改，需将长期变更同步到源码。`official` 只在板端及工装验收后人工设置，单次 `pass` 不会自动晋级。
 

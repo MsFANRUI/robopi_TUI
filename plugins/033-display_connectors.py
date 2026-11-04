@@ -18,6 +18,7 @@ PLUGIN = {
     'name': 'Display connector inventory',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'test',
     'category': 'Display',
     'safety': 'passive',

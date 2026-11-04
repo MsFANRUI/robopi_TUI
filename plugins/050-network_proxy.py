@@ -20,6 +20,7 @@ PLUGIN = {
     'name': 'Network proxy',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'action',
     'category': 'Network',
     'batch': False,

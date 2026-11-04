@@ -18,6 +18,7 @@ PLUGIN = {
     'name': 'USB device inventory',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'safety': 'passive',
     'category': 'USB',
     'requires': ['usb'],

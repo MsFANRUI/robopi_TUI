@@ -7,8 +7,8 @@ import sys
 from loader import task_catalog as catalog
 from loader import task_runtime as runtime
 
-METHODS = ('tasks.list', 'tasks.describe', 'snapshot.get', 'jobs.start',
-           'jobs.get', 'jobs.list', 'jobs.active', 'jobs.acknowledge')
+METHODS = ('tasks.list', 'tasks.describe', 'snapshot.get', 'motors.get',
+           'jobs.start', 'jobs.get', 'jobs.list', 'jobs.active', 'jobs.acknowledge')
 
 
 def error(request_id, number, code, message):
@@ -39,12 +39,18 @@ def dispatch(request):
         if method == 'tasks.list':
             caps = runtime.capabilities()
             result = {key: caps[key] for key in ('identity', 'tuiVersion', 'writable')}
+            result['server'] = caps.get('server', 'robopi-tui')
             result.update(protocol=1, methods=list(METHODS),
                           tasks=[task.describe() for task in catalog.TASKS.values()])
         elif method == 'tasks.describe':
             result = catalog.get(required(params, 'taskId')).describe()
         elif method == 'snapshot.get':
             result = dict(snapshot=runtime.backend.snapshot())
+        elif method == 'motors.get':
+            config = params.get('config')
+            if config is not None and not isinstance(config, str):
+                raise ValueError('config must be a string path')
+            result = runtime.motor_status(config)
         elif method == 'jobs.start':
             task_id, request_id_value = required(params, 'taskId'), required(params, 'requestId')
             catalog.get(task_id)

@@ -20,6 +20,7 @@ PLUGIN = {
     'name': 'Board hostname',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'action',
     'category': 'System',
     'batch': False,

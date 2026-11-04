@@ -18,6 +18,7 @@ PLUGIN = {
     'name': 'Network interface inventory',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'safety': 'passive',
     'category': 'Network',
     'requires': ['network'],

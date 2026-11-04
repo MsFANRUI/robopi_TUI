@@ -18,6 +18,9 @@ FLASHER = Path('/opt/roboparty/bin/flash_hpm.sh')
 NORMAL = ('1209', '2323')
 BOOT = ('34b7', '0008')
 EXPECTED_CAN = {'can0', 'can1', 'can2', 'can3'}
+# Fronting server name reported in backend results. rp_server sets
+# RP_TUI_SERVER=rp_server when it invokes the TUI JSON-RPC backend.
+SERVER_NAME = os.environ.get('RP_TUI_SERVER') or 'robopi-tui'
 APT_OPTIONS = ['-y', '--no-remove', '-o', 'DPkg::Lock::Timeout=120',
                '-o', 'Dpkg::Options::=--force-confold']
 
@@ -252,6 +255,9 @@ def snapshot(refreshed_at=None):
 
     add('设备', '板端后端', 'robopi-tui JSON API v1；全部业务由板端执行')
     add('设备', '主机名', raw['identity']['hostname'])
+    serial = raw['identity'].get('serial') or ''
+    add('设备', '板卡序列号', serial or '未读取到',
+        'pass' if serial else 'needs_review')
     add('设备', '运行权限', f"uid={raw['identity']['uid']}")
     for key, group in [('system', '系统'), ('resources', '资源'), ('network', '网络')]:
         data = section(key, group)
@@ -332,7 +338,8 @@ def snapshot(refreshed_at=None):
     else:
         packages = [dict(name=name, installedVersion='未确认', latestVersion='未确认',
                          status='查询失败', source='apt.roboparty.com', architecture='') for name in FOCUS_PACKAGES]
-    return dict(schemaVersion=1, format='board-snapshot-v1', identity=raw['identity'], collectedAt=stamp,
+    return dict(schemaVersion=1, format='board-snapshot-v1', server=SERVER_NAME,
+                identity=raw['identity'], collectedAt=stamp,
                 parameters=parameters, softwarePackages=packages, can=can_check,
                 canConfiguration=can_configuration,
                 packageError=raw['packages']['error'], raw=raw)
@@ -367,6 +374,7 @@ def execute_action(action, emit):
         data.get('canConfiguration') or {}).get('outcome') != 'pass'
     if can_warning and outcome == 'pass':
         outcome = 'needs_review'
-    return dict(outcome=outcome, summary='板端任务完成' if outcome == 'pass'
+    return dict(outcome=outcome, server=SERVER_NAME,
+                summary='板端任务完成' if outcome == 'pass'
                 else '任务已执行，HPM CAN 配置异常或未确认，请查看 CAN 明细' if can_warning
                 else '任务已执行，部分版本或设备未达到期望，请查看明细', snapshot=data, details=detail)

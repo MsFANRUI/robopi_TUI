@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout code
@@ -32,7 +32,7 @@ jobs:
         echo "Tag matches changelog: v$TAG_VERSION"
 
     - name: Install build dependencies
-      run: sudo apt-get update && sudo apt-get install -y build-essential debhelper
+      run: sudo apt-get update && sudo apt-get install -y build-essential debhelper python3-yaml
 
     - name: Build Debian package
       run: |
@@ -40,15 +40,15 @@ jobs:
 
         DEBIAN_VERSION=$(dpkg-parsechangelog -S Version)
         VERSION=${DEBIAN_VERSION%%-*}
-        mv "../robopi-tui_${DEBIAN_VERSION}_arm64.deb" .
+        mv "../robopi-tui_${DEBIAN_VERSION}_all.deb" .
 
         echo "PKG_VERSION=$VERSION" >> $GITHUB_ENV
-        ls -l robopi-tui_*_arm64.deb
+        ls -l robopi-tui_*_all.deb
 
     - name: Verify package layout
       run: |
         set -eu
-        deb=$(find . -maxdepth 1 -name 'robopi-tui_*_arm64.deb' -print -quit)
+        deb=$(find . -maxdepth 1 -name 'robopi-tui_*_all.deb' -print -quit)
         test -n "$deb"
         test ! -e package-root
         mkdir package-root
@@ -61,18 +61,30 @@ jobs:
         test -f package-root/opt/roboparty/share/doc/robopi-tui/plugins/README.md
         test ! -e package-root/usr/sbin/robopi-tui
         test ! -d package-root/usr/lib/robopi-tui
+        test "$(dpkg-deb -f "$deb" Architecture)" = "all"
         package-root/opt/roboparty/bin/robopi-tui --version
+        # Non-arm64 hosts must expose only generic plugins.
+        RP_TUI_GENERIC=1 python3 \
+          package-root/opt/roboparty/lib/robopi-tui/loader/plugin_executor.py \
+          --list --no-save > generic.json
+        python3 - <<'PY'
+        import json
+        data = json.load(open('generic.json'))
+        assert data['tests'], 'no generic plugins listed'
+        assert all(test['generic'] for test in data['tests']), 'non-generic plugin listed'
+        print('generic plugins:', len(data['tests']))
+        PY
 
     - name: Upload Debian package
       uses: actions/upload-artifact@v4
       with:
-        name: robopi-tui-v${{ env.PKG_VERSION }}-arm64
+        name: robopi-tui-v${{ env.PKG_VERSION }}-all
         path: |
-          robopi-tui_*_arm64.deb
+          robopi-tui_*_all.deb
 
     - name: Upload to GitHub Release
       if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          robopi-tui_*_arm64.deb
+          robopi-tui_*_all.deb

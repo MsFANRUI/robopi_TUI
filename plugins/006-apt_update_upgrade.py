@@ -15,6 +15,7 @@ PLUGIN = {
     'name': 'APT update and upgrade',
     'version': '1.1',
     'lifecycle': 'testing',
+    'generic': True,
     'safety': 'active',
     'category': 'System',
     'confirm': 'Run apt-get update and upgrade on this board?',

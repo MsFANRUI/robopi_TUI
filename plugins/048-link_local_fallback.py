@@ -19,6 +19,7 @@ PLUGIN = {
     'name': 'IPv4 link-local fallback',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'action',
     'category': 'Network',
     'batch': False,

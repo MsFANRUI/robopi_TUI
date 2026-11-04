@@ -18,6 +18,7 @@ PLUGIN = {
     'name': 'CPU frequency policy',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'action',
     'category': 'System',
     'batch': False,

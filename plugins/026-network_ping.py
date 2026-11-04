@@ -20,6 +20,7 @@ PLUGIN = {
     'name': 'Network reachability',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'test',
     'category': 'Network',
     'batch': False,

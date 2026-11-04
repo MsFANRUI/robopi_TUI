@@ -6,11 +6,11 @@ RoboPi 板端配置与测试插件系统。`sudo robopi-tui` 打开终端界面�
 
 在本仓库根目录操作。离线单元测试需要 Python 3 和 `python3-yaml`；构建 Debian 包还需要 `debhelper`。**修改现有插件**时，先从[状态清单](plugins/STATUS.md)找到编号，再打开对应的 `plugins/NNN-name.py`：修改顶层 `PLUGIN` 字典中的显示信息、`documentation` 判据或参数声明，并在同一文件修改 `probe()` 等实际逻辑。只改 `documentation.criterion` 不会改变检测行为；只改检测逻辑也不会自动更新判据。若是板端临时改元数据，可用 `sudo robopi-tui` → **Plugin metadata**；该菜单不能修改插件代码，且软件包升级可能覆盖板端改动。
 
-**新增插件**从未注册的示例复制；下面的 `RP056` 仅是当前编号状态下的示例，动手前先核对[状态清单](plugins/STATUS.md)和文件名，选下一个未使用编号。不要复用或重排旧编号。
+**新增插件**从未注册的示例复制；下面的 `RP057` 仅是当前编号状态下的示例，动手前先核对[状态清单](plugins/STATUS.md)和文件名，选下一个未使用编号。不要复用或重排旧编号。
 
 ```bash
-cp loader/examples/056-example.py plugins/056-machine_id.py
-# 编辑新文件：文件名 056 对应 PLUGIN['id'] = 'RP056'；实现 probe()，填写真实判据
+cp loader/examples/057-example.py plugins/057-machine_id.py
+# 编辑新文件：文件名 057 对应 PLUGIN['id'] = 'RP057'；实现 probe()，填写真实判据
 python3 loader/plugin_validator.py
 python3 loader/generate_plugin_status.py --write
 python3 loader/generate_plugin_status.py --check
@@ -52,7 +52,9 @@ python3 loader/plugin_executor.py --list --no-save
 | 显示与本地化 | DRM 连接/模式、X11/Labwc 熄屏、区域设置、时区。 |
 | 外设 | Addon、灯板、BMS、HiPNUC、HPM 固件、单电机参数及 USB Hub 压测。 |
 
-插件头部的字面量 `PLUGIN` 声明编号、板卡集合 `station`、客户端集合 `clients`、编写人、名称、文档标题与判据、版本、生命周期、`kind`、`category`、`batch`、风险、能力要求、依赖、超时、确认文案与输入字段。当前 55 项均声明 `['robopi2', 'rdkx5', 'opi5pro']`，编写人均为 `wentywenty`，生命周期均为 `testing`。这三个板卡名是适用范围声明，尚未代表跨板卡实机验证。`kind=test` 用于检测，`kind=action` 用于配置；TUI 从目录动态生成类别和表单，不识别任何插件的固定编号。
+包为 `Architecture: all`：arm64 板卡显示全部插件；非 arm64 主机（x86/amd64）只列出并运行 `generic=True` 的插件（当前 27 项），板卡专用项不会出现。检测可用 `RP_TUI_GENERIC=1/0` 强制覆盖，主机侧测试固定为 `0`。
+
+插件头部的字面量 `PLUGIN` 声明编号、板卡集合 `station`、客户端集合 `clients`、编写人、名称、文档标题与判据、版本、生命周期、`kind`、`generic`、`category`、`batch`、风险、能力要求、依赖、超时、确认文案与输入字段。当前 56 项均声明 `['robopi2', 'rdkx5', 'opi5pro']`，编写人均为 `wentywenty`，生命周期均为 `testing`。这三个板卡名是适用范围声明，尚未代表跨板卡实机验证。`kind=test` 用于检测，`kind=action` 用于配置；TUI 从目录动态生成类别和表单，不识别任何插件的固定编号。
 
 加载器用 AST 读取元数据，列目录时不导入插件。每次执行启动独立子进程；依赖项只有 `pass` 才可放行后续项。`--run all` 只选择 `batch=true` 项，仍跳过其中的主动操作。主动项必须明确选编号；TUI 会询问参数和确认。`pass`、`fail`、`needs_review`、`skip`、`error` 是单项结果，整体结果为 `pass`、`fail` 或 `incomplete`。一次 `pass` 不会将 `testing` 自动晋升为 `official`。
 
@@ -83,7 +85,7 @@ HPM 操作先刷新源并安装 `roboparty-analyze`，从 `dpkg-query -L` 中选
 
 1.0.3 起，包操作前检查日志空间：`/var/log` 可用不足8MiB时，仅检查 `/var/log/robopi/seven-YYYYMMDD-HHMMSS` 及 `/var/log.hdd/robopi` 的旧会话。必须有已结束记录、至少结束60秒、无进程占用、无符号链接或特殊文件、归档期间内容不变，才先压缩归档到私有 `/var/lib/robopi-tui/legacy-log-archives` 再删除旧目录；磁盘镜像同时处理，避免重启回灌。兼容旧 analyze 追加结束记录导致 manifest JSON 格式错误的已知格式。当前 `/home/robo/robopi-logs`、系统日志、APT日志和配置均不在清理范围。空间充足不清理；无法安全释放到至少2MiB时仍中止升级。实现为 `loader/board_log_cleanup.py`，归档路径和删除清单记入任务结果/事件。
 
-`start` 返回任务身份，`status` 同时返回阶段事件、终态和结果。最终结论检查 `outcome`（pass/fail/needs_review/error），不能仅看进程退出码。任务与日志在私有 `/var/lib/robopi-tui/studio-jobs/<UUID>/`，由 systemd 瞬态服务托管，断开 ADB/关闭 Studio 不会取消板端写入。相同 UUID 去重，冲突任务拒绝；重连只查询，不重放。升级前冻结 loader/plugins 到任务目录，APT 替换 TUI 不会改变本任务实现；下一次 API 调用读取新安装代码。旧任务归档由维护人员保留/清理，当前不自动删历史。
+`motors.get` 提供只读电机错误/状态快照（只创建驱动并读反馈，不使能、不发送、刷新状态）。`tasks.list` 的 identity 带 `serial`/`serialSource`；`tasks.list`、`snapshot.get` 与任务结果均带 `server` 字段，标识当前前端服务：直接调用 TUI 时为 `robopi-tui`；由 rp_server 代理时为 `rp_server`（rp_server 通过 `RP_TUI_SERVER` 注入）。`start` 返回任务身份，`status` 同时返回阶段事件、终态和结果。最终结论检查 `outcome`（pass/fail/needs_review/error），不能仅看进程退出码。任务与日志在私有 `/var/lib/robopi-tui/studio-jobs/<UUID>/`，由 systemd 瞬态服务托管，断开 ADB/关闭 Studio 不会取消板端写入。相同 UUID 去重，冲突任务拒绝；重连只查询，不重放。升级前冻结 loader/plugins 到任务目录，APT 替换 TUI 不会改变本任务实现；下一次 API 调用读取新安装代码。旧任务归档由维护人员保留/清理，当前不自动删历史。验收索引按 SN 写在 `/var/lib/robopi-tui/acceptance/sn-<serial>/`，无 SN 时回退 `machine-<machineId>/`。
 
 板端重启或进程异常退出会标记 `interrupted` 并锁定新任务。人工检查 `dpkg --audit`、任务日志、USB/CAN 和复位服务后，可用 `studio_api.py acknowledge <UUID>` 确认解除该锁；这个命令不修复系统、不重跑原任务。没有远程强杀升级/烧录接口，Studio 的“停止等待”只解除电脑等待。
 
@@ -97,7 +99,7 @@ python3 loader/plugin_executor.py --run RP001 --no-save
 python3 loader/plugin_executor.py --env csharp --list --no-save
 ```
 
-TUI 的标题、背景栏和 `--version` 都从 `debian/changelog` 读取包版本；安装后读取随包安装到 `/opt/roboparty/share/doc/robopi-tui/` 的 `changelog`，不用在 Python 中另写版本号。TUI 默认只显示 `official` 项；主菜单切换 **Developer mode** 可查看全部 55 项，包括测试中、废弃和仅 C# 项。废弃项和仅 C# 项在 TUI 中不能运行。当前全部为 `testing`，所以要从开发者模式进入测试目录。插件各自维护 `PLUGIN['version']`，在菜单和报告中独立显示。主菜单的 **Plugin metadata** 可查看插件元数据；用 `sudo robopi-tui` 可以编辑生命周期和其他字段。编辑菜单与写入逻辑仍在 `loader/plugin_metadata.py`；字段以 JSON 格式展示和输入，实际写回的是 `plugins/` 中对应 `.py` 文件的 `PLUGIN` 字典，没有单独的插件 `.json` 文件。详细规则见[字段说明](plugins/README.md)，各项状态与判据见[自动生成清单](plugins/STATUS.md)。
+TUI 的标题、背景栏和 `--version` 都从 `debian/changelog` 读取包版本；安装后读取随包安装到 `/opt/roboparty/share/doc/robopi-tui/` 的 `changelog`，不用在 Python 中另写版本号。TUI 默认只显示 `official` 项；主菜单切换 **Developer mode** 可查看全部 56 项，包括测试中、废弃和仅 C# 项。废弃项和仅 C# 项在 TUI 中不能运行。当前全部为 `testing`，所以要从开发者模式进入测试目录。插件各自维护 `PLUGIN['version']`，在菜单和报告中独立显示。主菜单的 **Plugin metadata** 可查看插件元数据；用 `sudo robopi-tui` 可以编辑生命周期和其他字段。编辑菜单与写入逻辑仍在 `loader/plugin_metadata.py`；字段以 JSON 格式展示和输入，实际写回的是 `plugins/` 中对应 `.py` 文件的 `PLUGIN` 字典，没有单独的插件 `.json` 文件。详细规则见[字段说明](plugins/README.md)，各项状态与判据见[自动生成清单](plugins/STATUS.md)。
 
 ADB 上位机可调用 `python3 /opt/roboparty/lib/robopi-tui/loader/plugin_executor.py --env csharp --client-id LINE-PC-01 --list` 或 `--run RP001`。交互入口是 `/opt/roboparty/bin/robopi-tui`，系统兼容命令为 `/usr/bin/robopi-tui`。从旧包升级的外部调用方需将脚本路径 `loader/runner.py` 改为 `/opt/roboparty/lib/robopi-tui/loader/plugin_executor.py`；JSON 参数与返回格式未因文件重命名改变。`schema_version` 为 **3**；`--list` 返回 `tests[]`，`--run` 返回设备身份、时间、整体结论、计数及 `results[]`。C# 目录只包含允许该客户端的 23 项；配置动作与主动测试仅允许 TUI，调度器会拒绝 C# 指定运行。`--env` 是调用方声明，不是身份认证。进程退出码 0 仅表示报告生成，调用方必须检查 `outcome` 和每项 `result`。带 `secret` 字段的插件只能用 `--params-stdin` 从标准输入传 JSON，避免敏感值出现在进程命令行和报告中；目录的 `inputs[].when` 决定条件字段是否显示。
 
@@ -109,7 +111,7 @@ ADB 上位机可调用 `python3 /opt/roboparty/lib/robopi-tui/loader/plugin_exec
 
 `RP006` 执行 APT 更新与升级；`RP014` 复位 USB Hub 100 次；`RP024` 擦写 HPM Flash；`RP025` 只对明确选择并物理隔离的一台 LRO 电机写参数、逐项读回，保持 `CAN_TIMEOUT` 不变，不使能或控制运动。即时读回不等于断电保持。操作前必须核对实际 `robot.yaml`、CAN 接口、电机 ID、总线独占、限流、急停和现场监护。
 
-2026-10-22 can0 事故后，CAN 波特率/重启、电机使能与运动、头部电机查询、电机/CAN 压力发帧仍保持锁定，不得通过插件绕开。HiPNUC 版本与波特率查询也尚未完成板端验收。RP026–RP055 是迁移后的新插件，主机侧测试和打包成功不代表实机配置生效；现场应逐项验收。现有 CI 没有 RoboPi 实机、工装或 Windows C# 前端，不能把当前结果作为产线终检放行依据。
+2026-10-22 can0 事故后，CAN 波特率/重启、电机使能与运动、头部电机查询、电机/CAN 压力发帧仍保持锁定，不得通过插件绕开。HiPNUC 版本与波特率查询也尚未完成板端验收。RP026–RP056 是迁移后的新插件，主机侧测试和打包成功不代表实机配置生效；现场应逐项验收。现有 CI 没有 RoboPi 实机、工装或 Windows C# 前端，不能把当前结果作为产线终检放行依据。
 
 ## 构建
 

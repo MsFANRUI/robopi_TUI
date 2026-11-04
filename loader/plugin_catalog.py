@@ -19,7 +19,7 @@ ID_PATTERN = re.compile(r'RP[0-9]{3}\Z')
 PLUGIN_FILENAME = re.compile(r'([0-9]{3})-[a-z][a-z0-9_]*\.py\Z')
 PLUGIN_FIELDS = (
     'id', 'station', 'clients', 'author', 'name', 'documentation', 'version', 'lifecycle', 'kind',
-    'category', 'batch', 'confirm', 'inputs', 'safety', 'requires',
+    'generic', 'category', 'batch', 'confirm', 'inputs', 'safety', 'requires',
     'depends_on', 'timeout_s',
 )
 
@@ -107,6 +107,9 @@ def load_plugins(directory=PLUGIN_DIR, overrides=None):
         kind = metadata.get('kind', 'test')
         if kind not in ('test', 'action'):
             raise ValueError(f'Invalid plugin kind: {plugin_id}')
+        generic = metadata.get('generic', False)
+        if type(generic) is not bool:
+            raise ValueError(f'Invalid generic flag: {plugin_id}')
         category = metadata.get('category', '板端测试')
         if not isinstance(category, str) or not category.strip():
             raise ValueError(f'Invalid plugin category: {plugin_id}')
@@ -187,9 +190,9 @@ def load_plugins(directory=PLUGIN_DIR, overrides=None):
         if type(timeout) is not int or not 1 <= timeout <= maximum:
             raise ValueError(f'Plugin timeout must be 1..{maximum} seconds: {plugin_id}')
         plugins.append({**metadata, 'requires': requires, 'depends_on': depends_on,
-                        'timeout_s': timeout, 'kind': kind, 'category': category,
-                        'batch': batch, 'confirm': confirm, 'inputs': inputs,
-                        '_script': script.name})
+                        'timeout_s': timeout, 'kind': kind, 'generic': generic,
+                        'category': category, 'batch': batch, 'confirm': confirm,
+                        'inputs': inputs, '_script': script.name})
     execution_order(plugins)
     by_id = {plugin['id']: plugin for plugin in plugins}
     for plugin in plugins:
@@ -245,6 +248,7 @@ def catalog(plugins, checker=has_capability, client=None, include_all=False):
                       'version': plugin['version'], 'safety': plugin['safety'],
                       'lifecycle': plugin['lifecycle'],
                       'kind': plugin.get('kind', 'test'),
+                      'generic': plugin.get('generic', False),
                       'category': plugin.get('category', '板端测试'),
                       'batch': plugin.get('batch', True),
                       'confirm': plugin.get('confirm', ''),

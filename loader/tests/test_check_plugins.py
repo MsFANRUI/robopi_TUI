@@ -33,9 +33,9 @@ class PluginFormatTests(unittest.TestCase):
                         load_plugins(Path(temp))
 
     def test_repository_plugins_and_example(self):
-        self.assertEqual(len(check_plugins(ROOT / 'plugins')), 55)
+        self.assertEqual(len(check_plugins(ROOT / 'plugins')), 56)
         example = check_plugins(ROOT / 'loader' / 'examples')
-        self.assertEqual([plugin['id'] for plugin in example], ['RP056'])
+        self.assertEqual([plugin['id'] for plugin in example], ['RP057'])
         self.assertEqual(example[0]['lifecycle'], 'testing')
 
     def test_unknown_field_is_rejected_without_running_plugin(self):

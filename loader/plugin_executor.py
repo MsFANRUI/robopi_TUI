@@ -7,10 +7,13 @@
 import argparse
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
 import json
+import logging
 import math
 import os
 from pathlib import Path
+import platform
 import re
 import signal
 import subprocess
@@ -20,9 +23,13 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from loader import acceptance
+from loader.board_snapshot import identity as board_identity
 from loader.plugin_catalog import (CLIENTS, PLUGIN_DIR, SCHEMA_VERSION, available,
                                    catalog, execution_order, has_capability, load_plugins)
 from loader.package_version import package_version
+
+logger = logging.getLogger(__name__)
 
 REPORT_DIR = Path('/var/lib/robopi-tui/reports')
 PACKAGE_VERSION = package_version()
@@ -34,6 +41,32 @@ CLIENT_ID_PATTERN = re.compile(r'[A-Za-z0-9_.:-]{1,64}\Z')
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec='milliseconds')
+
+
+def generic_host():
+    """True on non-board hosts (x86/amd64), where only generic plugins may run.
+
+    ``RP_TUI_GENERIC=0/1`` overrides detection (used by host-side tests).
+    """
+    override = os.environ.get('RP_TUI_GENERIC', '').lower()
+    if override in ('0', 'false', 'no'):
+        return False
+    if override in ('1', 'true', 'yes'):
+        return True
+    return platform.machine().lower() not in ('aarch64', 'arm64')
+
+
+def generic_plugins(plugins):
+    """Filter to generic plugins and reject dependencies outside that set."""
+    allowed = {plugin['id'] for plugin in plugins if plugin.get('generic', False)}
+    for plugin in plugins:
+        if plugin['id'] not in allowed:
+            continue
+        missing = [dep for dep in plugin['depends_on'] if dep not in allowed]
+        if missing:
+            raise ValueError('Generic plugin ' + plugin['id']
+                             + ' depends on non-generic ' + ', '.join(missing))
+    return [plugin for plugin in plugins if plugin['id'] in allowed]
 
 
 def execute_plugin(command, timeout, input_data=None):
@@ -231,7 +264,7 @@ def run_plugin(plugin, directory=PLUGIN_DIR, checker=has_capability, allow_activ
                  'message': f'{status}: {message}'})
     return {
         'id': plugin['id'], 'station': plugin['station'], 'clients': plugin['clients'],
-        'name': plugin['name'],
+        'name': plugin['name'], 'generic': plugin.get('generic', False),
         'author': plugin['author'], 'lifecycle': plugin['lifecycle'],
         'plugin_version': plugin['version'], 'plugin': diagnostic_metadata(plugin),
         'parameters': parameters, 'exit_code': exit_code,
@@ -248,6 +281,13 @@ def run_suite(plugins, selected='all', client='tui', directory=PLUGIN_DIR,
               addon_mode=None, params=None):
     if client not in CLIENTS:
         raise ValueError(f'Unknown client: {client}')
+    if generic_host():
+        if selected == 'all':
+            plugins = generic_plugins(plugins)
+        else:
+            target = next((plugin for plugin in plugins if plugin['id'] == selected), None)
+            if target is not None and not target.get('generic', False):
+                raise ValueError(f'{selected} is not supported on {platform.machine()}')
     chosen = execution_order(plugins, selected)
     if selected != 'all' and client not in chosen[-1]['clients']:
         raise ValueError(f'{selected} is not available to {client}')
@@ -279,6 +319,45 @@ def run_suite(plugins, selected='all', client='tui', directory=PLUGIN_DIR,
         'device': device_identity(), 'started_at': started,
         'finished_at': now(), 'outcome': outcome, 'summary': counts, 'results': results,
     }
+
+
+
+def write_acceptance(report, report_path):
+    """Best-effort per-SN acceptance index next to the saved report."""
+    identity = dict(board_identity())
+    device = report.get('device') or {}
+    identity['model'] = device.get('model', '')
+    if not identity.get('serial'):
+        identity['serial'] = device.get('serial') or ''
+        identity['serialSource'] = 'report-device' if identity['serial'] else ''
+    results = []
+    for item in report.get('results') or []:
+        plugin = item.get('plugin') or {}
+        criteria = {key: plugin.get(key) for key in
+                    ('id', 'version', 'documentation', 'requires')}
+        results.append({
+            'id': item.get('id'), 'result': item.get('result'),
+            'message': item.get('message'),
+            'plugin_version': item.get('plugin_version'),
+            'duration_ms': item.get('duration_ms'),
+            'criteriaHash': hashlib.sha256(
+                json.dumps(criteria, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+        })
+    payload = {
+        'tuiVersion': report.get('tui_version'),
+        'outcome': report.get('outcome'),
+        'summary': report.get('summary'),
+        'selected': report.get('selected'),
+        'client': report.get('client'),
+        'client_id': report.get('client_id'),
+        'results': results,
+        'reportPath': str(report_path),
+        'reportSha256': hashlib.sha256(Path(report_path).read_bytes()).hexdigest(),
+    }
+    root = (REPORT_DIR.parent if REPORT_DIR.name == 'reports' else REPORT_DIR) / 'acceptance'
+    return acceptance.write(root, 'plugin',
+                            report.get('run_id', ''), identity, payload,
+                            report.get('finished_at'))
 
 
 def save_report(report, directory=REPORT_DIR):
@@ -380,7 +459,10 @@ def main(argv=None):
         if args.list:
             if not args.no_save:
                 save_report(call_record('list', args.env, args.client_id), REPORT_DIR / 'calls')
-            print(json.dumps(catalog(plugins, client=args.env,
+            listed = plugins
+            if generic_host() and not args.include_all:
+                listed = generic_plugins(plugins)
+            print(json.dumps(catalog(listed, client=args.env,
                                      include_all=args.include_all), ensure_ascii=False))
             return 0
         report = run_suite(plugins, args.run, args.env, client_id=args.client_id,
@@ -391,6 +473,10 @@ def main(argv=None):
             save_report(call_record('run', args.env, args.client_id, selected=args.run,
                                     outcome=report['outcome'], report_path=path),
                         REPORT_DIR / 'calls')
+            try:
+                write_acceptance(report, path)
+            except Exception as exc:
+                logger.warning('acceptance record failed: %s', exc)
             print(f'Saved report: {path}', file=sys.stderr)
         print(json.dumps(report, ensure_ascii=False))
         return 0

@@ -8,7 +8,7 @@ import json
 
 
 PLUGIN = {
-    'id': 'RP056',
+    'id': 'RP057',
     'station': ['robopi2', 'rdkx5', 'opi5pro'],
     'clients': ['tui', 'csharp'],
     'author': 'wentywenty',
@@ -20,6 +20,7 @@ PLUGIN = {
     'version': '1.0',
     'lifecycle': 'testing',
     'kind': 'test',
+    'generic': False,
     'category': 'System',
     'batch': False,
     'safety': 'passive',
