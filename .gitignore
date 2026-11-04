@@ -14,3 +14,6 @@ debian/tmp/
 *.changes
 *.ddeb
 *.deb
+
+# Local tests (not part of the package)
+tests/
