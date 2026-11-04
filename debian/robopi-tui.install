@@ -3,6 +3,8 @@ TUI/plugin_test_menu.py opt/roboparty/lib/robopi-tui
 loader/*.py opt/roboparty/lib/robopi-tui/loader
 loader/examples/*.py opt/roboparty/share/doc/robopi-tui/loader/examples
 plugins/*.py opt/roboparty/lib/robopi-tui/plugins
+scripts/*.py opt/roboparty/lib/robopi-tui/scripts
+scripts/README.md opt/roboparty/share/doc/robopi-tui/scripts
 plugins/README.md opt/roboparty/share/doc/robopi-tui/plugins
 plugins/STATUS.md opt/roboparty/share/doc/robopi-tui/plugins
 debian/changelog opt/roboparty/share/doc/robopi-tui

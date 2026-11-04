@@ -33,7 +33,7 @@
 | RP022 | 1.0 | BMS | BMS 固件版本 | testing | test / passive | TUI+C# | 否 | 是 | RP021 | 按 `BMS_TYPE` 读到非零固件/硬件版本；不比较目标版本。 |
 | RP023 | 1.0 | BMS | BMS 重启与通信 | testing | test / active | TUI | 否 | 是 | RP020 | 重启服务成功，10 秒后满足 RP021 的实时数据判据。 |
 | RP024 | 1.1 | Interfaces | HPM EtherCANFD 刷写 | testing | test / active | TUI | 否 | 是 | RP001 | 板端安装 analyze、选择包内固件并刷写，正常 USB 连续两次出现且 HPM 的 can0–can3 全部识别；不验证 Flash 字节或电机通信。 |
-| RP025 | 1.0 | Motor | 单台 LRO 电机参数刷写 | testing | test / active | TUI | 否 | 否 | RP001 | 选择并隔离一台电机，逐项读回且 `CAN_TIMEOUT` 不变；不验证断电保持。 |
+| RP025 | 2.2 | Motor | can0-can3 LRO 电机参数批量写入 | testing | test / active | TUI | 否 | 否 | RP001 | 按实际 robot.yaml 调用运控脚本并行写入 can0-can3 上的 LRO 电机并读回；包含 CAN_TIMEOUT=0 与 Pn 参数，成功后需电机重新上下电。 |
 | RP026 | 1.0 | Network | 指定接口 Ping | testing | test / query | TUI+C# | 是 | 否 | 无 | 选定接口和目标，5 次 Ping；不修改网络。 |
 | RP027 | 1.0 | Interfaces | ADB gadget 状态 | testing | test / passive | TUI+C# | 否 | 是 | 无 | 观察 adbd 和 UDC。 |
 | RP028 | 1.0 | Interfaces | ADB gadget 控制 | testing | action / active | TUI | 否 | 否 | 无 | 明确选择启停；可能断开 ADB。 |
