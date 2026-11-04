@@ -36,6 +36,7 @@ IMU_BITRATE = runpy.run_path(str(ROOT / 'plugins' / '009-hipnuc_can_bitrate.py')
 IMU_VERSION = runpy.run_path(str(ROOT / 'plugins' / '010-hipnuc_firmware_version.py'))
 APT_SOURCE = runpy.run_path(str(ROOT / 'plugins' / '004-roboparty_apt_repository.py'))
 PACKAGES = runpy.run_path(str(ROOT / 'plugins' / '005-installed_roboparty_packages.py'))
+MOTOR_PARAMS = runpy.run_path(str(ROOT / 'plugins' / '025-lro_motor_parameters.py'))
 BMS_SERVICE = runpy.run_path(str(ROOT / 'plugins' / '021-bms_service.py'))
 ADDON_STATUS = runpy.run_path(str(ROOT / 'plugins' / '017-addon_readiness.py'))
 ADDON_LED = runpy.run_path(str(ROOT / 'plugins' / '018-addon_led_visual.py'))
@@ -336,6 +337,70 @@ class RunnerTests(unittest.TestCase):
         with patch('loader.task_runtime.run_for_tui', return_value={'status': 'fail'}) as shared:
             self.assertEqual('fail', HPM['probe']()['status'])
             shared.assert_called_once_with('hpm-flash')
+
+    def test_one_lro_motor_is_selected_written_and_read_back(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / 'robot.yaml'
+            config.write_text('motors:\n'
+                              '  motor_interface: [can0, can1]\n'
+                              '  motor_interface_type: [canfd, canfd]\n'
+                              '  motor_num: [1, 1]\n'
+                              '  motor_type: [LRO, LRO]\n'
+                              '  motor_id: [2, 2]\n'
+                              '  motor_model: [1, 2]\n')
+            self.assertEqual(MOTOR_PARAMS['select_target'](config, 'can0', 2), 1)
+            self.assertEqual(MOTOR_PARAMS['select_target'](config, 'can1', 2), 2)
+            class Session:
+                def __init__(self):
+                    self.writes = []
+                    self.values = {'can_timeout': (0.0, 100.0)}
+                def read_param(self, key):
+                    return self.values.get(key, (0.0, 0.0))
+                def write_param(self, key, low, high):
+                    self.writes.append(key)
+                    self.values[key] = (low, high)
+            session = Session()
+            observed = MOTOR_PARAMS['probe'](
+                config, 'can0', 2, True, lambda *args: session,
+                lambda interface: {'state': 'ERROR-ACTIVE'}, lambda: True,
+                root / 'logs', lambda delay: None)
+            self.assertEqual(observed['status'], 'pass')
+            self.assertEqual(session.writes, ['kt', 'kp', 'kd', 'pos', 'spd', 'tor'])
+            self.assertEqual(observed['details']['can_timeout_after_ms'], 100)
+            events = [json.loads(line)['event'] for line in
+                      Path(observed['details']['journal']).read_text().splitlines()]
+            self.assertEqual(events.count('readback'), 6)
+            self.assertEqual(events[-1], 'complete')
+            self.assertEqual(MOTOR_PARAMS['probe'](
+                config, 'can0', 2, False, lambda *args: session,
+                lambda interface: {}, lambda: True, root / 'unused')['status'], 'fail')
+
+    def test_lro_motor_parameter_mismatch_stops_remaining_writes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / 'robot.yaml'
+            config.write_text('motors:\n'
+                              '  motor_interface: [can0]\n'
+                              '  motor_interface_type: [canfd]\n'
+                              '  motor_num: [1]\n'
+                              '  motor_type: [LRO]\n'
+                              '  motor_id: [3]\n'
+                              '  motor_model: [1]\n')
+            class MismatchSession:
+                writes = []
+                def read_param(self, key):
+                    return (0.0, 20.0) if key == 'can_timeout' else (0.0, 0.0)
+                def write_param(self, key, low, high):
+                    self.writes.append(key)
+            session = MismatchSession()
+            observed = MOTOR_PARAMS['probe'](
+                config, 'can0', 3, True, lambda *args: session,
+                lambda interface: {}, lambda: True, root / 'logs', lambda delay: None)
+            self.assertEqual(observed['status'], 'fail')
+            self.assertEqual(session.writes, ['kt'])
+            self.assertEqual(observed['details']['completed_writes'][0]['key'], 'kt')
+
     def test_network_snapshot(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
