@@ -1,3 +1,11 @@
+robopi-tui (1.1.2+rp025.1) unstable; urgency=medium
+
+  * Integrate the motion-team parallel LRO parameter deployment script.
+  * Add 24dof/28dof configuration choices and a custom path option to RP025.
+  * Archive deployment logs and configuration snapshots; require can-utils.
+
+ -- wentywenty <2321901849@qq.com>  Wed, 04 Nov 2026 18:00:00 +0800
+
 robopi-tui (1.1.2) unstable; urgency=medium
 
   * Add the board serial number (RP034) to snapshots as a system parameter,

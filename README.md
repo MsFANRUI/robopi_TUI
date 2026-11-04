@@ -50,7 +50,7 @@ python3 loader/plugin_executor.py --list --no-save
 | 接口 | CAN、ADB gadget、USB/USB-CAN、GPIO、设备树 Overlay、VNC。 |
 | 串口 | 端口清单、getty、收发/回环/互测、RS485 收发。 |
 | 显示与本地化 | DRM 连接/模式、X11/Labwc 熄屏、区域设置、时区。 |
-| 外设 | Addon、灯板、BMS、HiPNUC、HPM 固件、单电机参数及 USB Hub 压测。 |
+| 外设 | Addon、灯板、BMS、HiPNUC、HPM 固件、can0-can3 电机参数部署及 USB Hub 压测。 |
 
 插件头部的字面量 `PLUGIN` 声明编号、板卡集合 `station`、客户端集合 `clients`、编写人、名称、文档标题与判据、版本、生命周期、`kind`、`category`、`batch`、风险、能力要求、依赖、超时、确认文案与输入字段。当前 55 项均声明 `['robopi2', 'rdkx5', 'opi5pro']`，编写人均为 `wentywenty`，生命周期均为 `testing`。这三个板卡名是适用范围声明，尚未代表跨板卡实机验证。`kind=test` 用于检测，`kind=action` 用于配置；TUI 从目录动态生成类别和表单，不识别任何插件的固定编号。
 
@@ -103,11 +103,13 @@ ADB 上位机可调用 `python3 /opt/roboparty/lib/robopi-tui/loader/plugin_exec
 
 每次执行生成一份 `/var/lib/robopi-tui/reports/<时间>_<run_id>.json`；顶层 `tui_version` 来自 changelog，`results[]` 每项均保存插件完整元数据快照 `plugin`（含独立版本、判据、安全等级、依赖和参数声明）、脱敏的实际输入 `parameters`、`exit_code`、结果、`details` 与带 UTC 时间戳的 `logs`。插件返回 `error` 时，其诊断 `details` 也保留。TUI 结果页展示这些字段和全部捕获日志，C# 客户端可从 JSON 响应读取同一内容。stdout/stderr 时间戳是执行器捕获时刻，不是每行原始产生时间；插件内部子命令的输出以插件写入 `details` 或 stderr 的内容为准。
 
-报告以私有权限原子写入，`/var/lib/robopi-tui/reports/calls/` 保存调用索引、TUI 版本及对应的 `report_path`。USB 压测另存逐轮日志到 `usb-stress/`，单电机参数刷写另存逐步日志到 `motor-params/`。`--no-save` 仍返回完整 JSON，但不归档主报告和调用记录，也不控制插件自身日志。已声明的 `secret` 输入原值和秘密默认值会脱敏；插件仍不应输出派生的敏感数据。
+报告以私有权限原子写入，`/var/lib/robopi-tui/reports/calls/` 保存调用索引、TUI 版本及对应的 `report_path`。USB 压测另存逐轮日志到 `usb-stress/`，电机参数部署另存配置快照和完整脚本日志到 `motor-params/<UUID>/`。`--no-save` 仍返回完整 JSON，但不归档主报告和调用记录，也不控制插件自身日志。已声明的 `secret` 输入原值和秘密默认值会脱敏；插件仍不应输出派生的敏感数据。
 
 ## 操作边界
 
-`RP006` 执行 APT 更新与升级；`RP014` 复位 USB Hub 100 次；`RP024` 擦写 HPM Flash；`RP025` 只对明确选择并物理隔离的一台 LRO 电机写参数、逐项读回，保持 `CAN_TIMEOUT` 不变，不使能或控制运动。即时读回不等于断电保持。操作前必须核对实际 `robot.yaml`、CAN 接口、电机 ID、总线独占、限流、急停和现场监护。
+`RP006` 执行 APT 更新与升级；`RP014` 复位 USB Hub 100 次；`RP024` 擦写 HPM Flash；`RP025` v2 调用随包安装的运控脚本 `scripts/deploy_motorlro_params.py --mode write --config <配置快照> --parallel`，并限定为实际配置中的 can0-can3。不同 CAN 总线并行，同一路电机逐台处理；只处理 YAML 中列出的 LRO 电机，不扫描未配置的电机。写入内容包含 Kt、MIT 范围、电流范围、CAN_TIMEOUT=0（关闭超时保护）、公共和型号专用 Pn 参数、PnE71。脚本读回失败则报告失败，其他总线可能已经写入成功。操作前停止运控并核对实际机器人配置，成功后必须重新给电机上下电；即时读回不证明断电保持。
+
+RP025 使用方式：`sudo robopi-tui`，打开 Developer mode，进入 Motor，选择 RP025，然后选择“24 自由度 (rp1_24dof)”“28 自由度 (rp1)”或“自定义路径”。前两项自动查找对应的 `robot.yaml`，只有自定义选项需要输入绝对路径。查找范围为 `/opt/roboparty/share/roboparty_inference/robots`，以及当前目录、`/opt/roboparty`、`/root`、`/home/*` 下的 `roboparty_deploy/src/inference/robots` 或 `src/inference/robots`。没有匹配或存在多份不同文件时停止并提示手动指定，不会跨型号回退。实际路径保存在运行结果中。命令行仍可使用 `python3 loader/plugin_executor.py --run RP025 --motor-config /实际路径/robot.yaml`；旧版单电机 `--motor-interface/--motor-id/--motor-isolated` 参数已移除，旧调用会报错而不会被扩大为全机写入。脚本需要 `can-utils`；未知型号、重复或非法 ID、空目标及未启用的目标接口会在写入前报错。RP025 仍不会随 `--run all` 执行。
 
 2026-10-22 can0 事故后，CAN 波特率/重启、电机使能与运动、头部电机查询、电机/CAN 压力发帧仍保持锁定，不得通过插件绕开。HiPNUC 版本与波特率查询也尚未完成板端验收。RP026–RP055 是迁移后的新插件，主机侧测试和打包成功不代表实机配置生效；现场应逐项验收。现有 CI 没有 RoboPi 实机、工装或 Windows C# 前端，不能把当前结果作为产线终检放行依据。
 

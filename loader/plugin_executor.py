@@ -143,14 +143,12 @@ def redact(value, secrets):
 
 
 def run_plugin(plugin, directory=PLUGIN_DIR, checker=has_capability, allow_active=False,
-               blocked=None, motor_target=None, addon_mode=None, params=None):
+               blocked=None, addon_mode=None, params=None):
     started = now()
     tick = time.monotonic()
     secrets = [str(params[field['name']]) for field in plugin.get('inputs', [])
                if field['type'] == 'secret' and params and params.get(field['name'])]
     parameters = dict(params or {})
-    if motor_target:
-        parameters.update(motor_target)
     if addon_mode:
         parameters['mode'] = addon_mode
     for field in plugin.get('inputs', []):
@@ -173,10 +171,6 @@ def run_plugin(plugin, directory=PLUGIN_DIR, checker=has_capability, allow_activ
     elif runnable:
         try:
             command = [sys.executable, str(directory / plugin['_script'])]
-            if plugin['id'] == MOTOR_PLUGIN_ID and motor_target:
-                command.extend(['--config', motor_target['config'], '--interface',
-                                motor_target['interface'], '--motor-id',
-                                str(motor_target['motor_id']), '--isolated'])
             if plugin['id'] == ADDON_LED_PLUGIN_ID and addon_mode:
                 command.extend(['--mode', addon_mode])
             input_data = None
@@ -244,7 +238,7 @@ def run_plugin(plugin, directory=PLUGIN_DIR, checker=has_capability, allow_activ
 
 
 def run_suite(plugins, selected='all', client='tui', directory=PLUGIN_DIR,
-              checker=has_capability, client_id=None, motor_target=None,
+              checker=has_capability, client_id=None,
               addon_mode=None, params=None):
     if client not in CLIENTS:
         raise ValueError(f'Unknown client: {client}')
@@ -262,7 +256,7 @@ def run_suite(plugins, selected='all', client='tui', directory=PLUGIN_DIR,
                    if by_id[name]['result'] != 'pass']
         item = run_plugin(plugin, directory, checker,
                           allow_active=selected == plugin['id'], blocked=blocked,
-                          motor_target=motor_target, addon_mode=addon_mode,
+                          addon_mode=addon_mode,
                           params=params if selected == plugin['id'] else None)
         results.append(item)
         by_id[plugin['id']] = item
@@ -326,10 +320,6 @@ def main(argv=None):
     parser.add_argument('--client-id', help='caller identifier, such as a production PC name')
     parser.add_argument('--no-save', action='store_true', help='do not archive the report')
     parser.add_argument('--motor-config', help='absolute robot.yaml path for RP025')
-    parser.add_argument('--motor-interface', help='CAN interface for RP025')
-    parser.add_argument('--motor-id', type=int, help='one LRO motor ID for RP025')
-    parser.add_argument('--motor-isolated', action='store_true',
-                        help='confirm this motor is isolated and supervised for RP025')
     parser.add_argument('--addon-mode', choices=('demo', 'red', 'green', 'blue', 'off'),
                         help='LED pattern for RP018')
     parser.add_argument('--params', help='JSON object of declared plugin input values')
@@ -341,22 +331,14 @@ def main(argv=None):
             raise ValueError('--include-all is only valid with --env tui --list')
         if args.client_id and not CLIENT_ID_PATTERN.fullmatch(args.client_id):
             raise ValueError('Client ID must be 1..64 letters, digits, dots, underscores, colons or hyphens')
-        motor_args = (args.motor_config, args.motor_interface, args.motor_id,
-                      args.motor_isolated)
         has_params = args.params is not None or args.params_stdin
+        if args.motor_config:
+            if args.run != MOTOR_PLUGIN_ID or has_params:
+                raise ValueError('--motor-config requires --run RP025 without --params')
+            args.params = json.dumps({'config': args.motor_config})
+            has_params = True
         if args.run == MOTOR_PLUGIN_ID and not has_params:
-            if (not all(motor_args) or not Path(args.motor_config).is_absolute()
-                    or not re.fullmatch(r'can[0-9]+', args.motor_interface)
-                    or not 1 <= args.motor_id <= 0x7FF):
-                raise ValueError('RP025 requires --motor-config ABSOLUTE_PATH, '
-                                 '--motor-interface canN, --motor-id 1..2047 and '
-                                 '--motor-isolated')
-            motor_target = {'config': args.motor_config, 'interface': args.motor_interface,
-                            'motor_id': args.motor_id}
-        else:
-            if any(value is not None and value is not False for value in motor_args):
-                raise ValueError('Motor selection options are only valid with --run RP025')
-            motor_target = None
+            raise ValueError('RP025 requires --motor-config ABSOLUTE_PATH or --params with config')
         if args.run == ADDON_LED_PLUGIN_ID and not args.addon_mode and not has_params:
             raise ValueError('RP018 requires --addon-mode demo|red|green|blue|off')
         if args.run != ADDON_LED_PLUGIN_ID and args.addon_mode:
@@ -384,7 +366,7 @@ def main(argv=None):
                                      include_all=args.include_all), ensure_ascii=False))
             return 0
         report = run_suite(plugins, args.run, args.env, client_id=args.client_id,
-                           motor_target=motor_target, addon_mode=args.addon_mode,
+                           addon_mode=args.addon_mode,
                            params=params)
         if not args.no_save:
             path = save_report(report, REPORT_DIR)
