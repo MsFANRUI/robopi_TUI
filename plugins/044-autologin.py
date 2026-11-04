@@ -21,6 +21,7 @@ PLUGIN = {
     'name': 'Automatic login',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'action',
     'category': 'System',
     'batch': False,

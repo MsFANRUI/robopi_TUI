@@ -20,6 +20,7 @@ PLUGIN = {
     'name': 'VNC service control',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'action',
     'category': 'Interfaces',
     'batch': False,

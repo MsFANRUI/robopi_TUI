@@ -19,6 +19,7 @@ PLUGIN = {
     'name': 'Read-only root overlay',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'action',
     'category': 'System',
     'batch': False,

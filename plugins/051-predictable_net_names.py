@@ -18,6 +18,7 @@ PLUGIN = {
     'name': 'Predictable network names',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'action',
     'category': 'Network',
     'batch': False,

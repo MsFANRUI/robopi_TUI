@@ -36,13 +36,16 @@ def render_status(plugins):
                      + '`。板卡声明不等于实机验收。')
     else:
         lines.append('各插件的板卡与编写人以各自 `PLUGIN` 字段为准。')
+    generic_count = sum(plugin.get('generic', False) for plugin in plugins)
     lines += [
         '',
         '`批量=是` 只表示 `batch=True`；`active` 项在 `--run all` 中仍会跳过，必须指定编号。'
-        '`TUI+C#` 表示两个客户端均可调用。',
+        '`TUI+C#` 表示两个客户端均可调用。'
+        f'`通用=是` 表示插件不依赖 RoboPi 专有硬件/路径，可在通用 Linux（x86/amd64）上测试；'
+        f'当前 {generic_count} 项。',
         '',
-        '| 编号 | 版本 | 分类 | 项目 | 生命周期 | 类型 / 安全 | 客户端 | 批量 | 前置 | 判据 / 结果边界 |',
-        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+        '| 编号 | 版本 | 分类 | 项目 | 生命周期 | 类型 / 安全 | 客户端 | 通用 | 批量 | 前置 | 判据 / 结果边界 |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ]
     for plugin in sorted(plugins, key=lambda item: item['id']):
         clients = '+'.join('TUI' if client == 'tui' else 'C#'
@@ -50,6 +53,7 @@ def render_status(plugins):
         values = (plugin['id'], plugin['version'], plugin['category'],
                   plugin['documentation']['title'],
                   plugin['lifecycle'], f"{plugin['kind']} / {plugin['safety']}", clients,
+                  '是' if plugin.get('generic', False) else '否',
                   '是' if plugin['batch'] else '否',
                   ', '.join(plugin['depends_on']) or '无',
                   plugin['documentation']['criterion'])

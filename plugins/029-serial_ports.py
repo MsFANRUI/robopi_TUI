@@ -19,6 +19,7 @@ PLUGIN = {
     'name': 'Serial port inventory',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'kind': 'test',
     'category': 'Serial',
     'safety': 'passive',

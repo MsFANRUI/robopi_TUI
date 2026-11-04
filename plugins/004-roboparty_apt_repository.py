@@ -20,6 +20,7 @@ PLUGIN = {
     'name': 'RoboParty APT repository',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'safety': 'passive',
     'category': 'Network',
     'requires': ['apt'],

@@ -18,6 +18,7 @@ PLUGIN = {
     'name': 'Installed RoboParty packages',
     'version': '1.0',
     'lifecycle': 'testing',
+    'generic': True,
     'safety': 'passive',
     'category': 'System',
     'requires': [],

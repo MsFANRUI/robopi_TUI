@@ -4,6 +4,7 @@
 from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
+import os
 from pathlib import Path
 import runpy
 import socket
@@ -17,6 +18,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+# Host-side tests exercise board plugins even on x86 CI.
+os.environ.setdefault('RP_TUI_GENERIC', '0')
 RUNNER = runpy.run_path(str(ROOT / 'loader' / 'plugin_executor.py'))
 BOARD_TEMP = runpy.run_path(str(ROOT / 'plugins' / '001-board_temperature.py'))
 NETWORK = runpy.run_path(str(ROOT / 'plugins' / '003-network_interfaces.py'))
@@ -84,7 +87,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_installed_plugin_catalog(self):
         plugins = RUNNER['load_plugins'](ROOT / 'plugins')
-        self.assertEqual(len(plugins), 55)
+        self.assertEqual(len(plugins), 56)
         self.assertEqual({plugin['safety'] for plugin in plugins},
                          {'passive', 'query', 'active'})
         self.assertEqual({tuple(plugin['station']) for plugin in plugins},
@@ -94,7 +97,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual({plugin['author'] for plugin in plugins}, {'wentywenty'})
         self.assertEqual({plugin['lifecycle'] for plugin in plugins}, {'testing'})
         self.assertEqual([plugin['id'] for plugin in plugins],
-                         [f'RP{number:03}' for number in range(1, 56)])
+                         [f'RP{number:03}' for number in range(1, 57)])
         self.assertEqual(RUNNER['catalog'](plugins)['tests'][-1]['batch'], False)
 
     def test_declared_inputs_and_nonbatch_plugins(self):

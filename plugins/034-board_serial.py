@@ -6,9 +6,9 @@
 
 import json
 from pathlib import Path
-import re
 
-from loader.plugin_helpers import read_text, result
+from loader.board_snapshot import board_serial
+from loader.plugin_helpers import result
 
 
 PLUGIN = {
@@ -31,13 +31,11 @@ PLUGIN = {
 
 
 def probe(tree=Path('/proc/device-tree/serial-number'), cpuinfo=Path('/proc/cpuinfo')):
-    serial = read_text(tree)
-    if not serial:
-        match = re.search(r'(?im)^Serial\s*:\s*(\S+)', read_text(cpuinfo))
-        serial = match.group(1) if match else ''
+    serial, source = board_serial(tree, cpuinfo)
     if not serial:
         return result('skip', 'Board serial number not available')
-    return result('pass', f'Board serial number: {serial}', details={'serial': serial})
+    return result('pass', f'Board serial number: {serial}',
+                  details={'serial': serial, 'source': source})
 
 
 if __name__ == '__main__':

@@ -53,26 +53,40 @@ def section(action):
         return dict(data=None, error=str(error))
 
 
+def board_serial(tree=None, cpuinfo='/proc/cpuinfo'):
+    """Read the hardware serial without assuming a specific board profile."""
+    def optional(path):
+        try:
+            return text(path, True) or ''
+        except OSError:
+            return ''
+
+    paths = [tree] if tree is not None else [
+        '/proc/device-tree/serial-number',
+        '/sys/firmware/devicetree/base/serial-number',
+    ]
+    for path in paths:
+        serial = optional(path).strip()
+        if serial:
+            return serial, 'device-tree'
+    match = re.search(r'(?im)^Serial\s*:\s*(\S+)', optional(cpuinfo))
+    if match:
+        return match.group(1).strip(), 'cpuinfo'
+    return '', ''
+
+
 def identity():
+    serial, source = board_serial()
     return dict(machineId=text('/etc/machine-id'), bootId=text('/proc/sys/kernel/random/boot_id'),
-                hostname=text('/etc/hostname'), uid=os.geteuid())
-
-
-def board_serial():
-    """Match RP034: prefer the device-tree serial, then the kernel CPU fallback."""
-    for path in ('/proc/device-tree/serial-number', '/sys/firmware/devicetree/base/serial-number'):
-        value = text(path, True)
-        if value:
-            return value
-    cpuinfo = text('/proc/cpuinfo', True) or ''
-    match = re.search(r'(?im)^Serial\s*:\s*(\S+)', cpuinfo)
-    return match.group(1) if match else ''
+                hostname=text('/etc/hostname'), uid=os.geteuid(),
+                serial=serial, serialSource=source,
+                model=text('/proc/device-tree/model', True) or '')
 
 
 def system():
     return dict(os=text('/etc/os-release'), kernel=checked(['uname', '-srmo']),
                 model=text('/proc/device-tree/model', True) or 'Unsupported',
-                uptime=text('/proc/uptime'), architecture=checked(['dpkg', '--print-architecture']), serial=board_serial())
+                uptime=text('/proc/uptime'), architecture=checked(['dpkg', '--print-architecture']), serial=board_serial()[0])
 
 
 def resources():
